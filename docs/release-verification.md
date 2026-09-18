@@ -121,7 +121,7 @@ A known-failing default path in the supported runtime blocks release (REL11).
 
 | Notebook | Commit / notebook blob | Date (UTC) | Executor | Outcome |
 |---|---|---|---|---|
-| `mace_materials_colab.ipynb` | __LOCAL_ROW__ | | | |
+| `mace_materials_colab.ipynb` | `9afc026` / `1b9359b3` | 2026-09-18 | Local pre-flight harness (Windows, CPython 3.12.10, CPU, `google.colab` shim, pins pre-installed) | PASS — pre-flight only, **not** promotion evidence |
 
 ## Recorded executions
 
@@ -132,10 +132,13 @@ runtime, not general estimates.
 
 | Date (UTC) | Commit / notebook blob | Executor | Path exercised | Wall | Outcome |
 |---|---|---|---|---|---|
-| __LOCAL_EXEC__ | | | | | |
+| 2026-09-18 | `9afc026` / `1b9359b3` | Local pre-flight harness (Windows, CPython 3.12.10, CPU float64, `torch 2.14.0+cpu`, `mace-torch 0.3.16`, `e3nn 0.4.4`, `ase 3.29.0`) | Default sample path (stage → verify → **static audit + conversion in the notebook** → strict rebuild → generate + validate → split → refusal probes → predict + physics checks → baselines + frozen evaluation → calibrate + adapt → evaluate → predict new → export → reload); the two Hub files were pre-staged, so `stage_missing_files` fetched 0 of 2 entries, `verify_snapshot` verified 2, and `convert_model` produced the pinned digests (config `130b6411…`, safetensors `2ed99065…`) | 85.8 s | **PASSED** — 11/11 code cells; audit 0 violations, digest `9bb150f1…`; physics checks 0.0 / 2.8×10⁻¹⁴ / 0.0 / 0.0 / 5.2×10⁻¹⁵ / 2.0×10⁻⁸ / 1.3×10⁻¹⁵ / 0.0; test (n = 12): composition baseline 0.0929 eV/atom, zero-force 0.7376 eV/Å, frozen 3.9807 / 0.2079, adapted **0.00725 eV/atom / 0.0780 eV/Å** after 8 epochs (68.5 s, 1,919,128 params, calibration Al +3.768 / Cu +4.176 eV); new structures 0.0087 / 0.0443; adapter 16,155,811 B (39 tensors); reload parity 0.0 / 0.0. Pre-flight; hosted clean-runtime run still required |
 
 ## Current status
 
 The notebook source is complete and passes all static checks, including the generator parity checks (`--check` OK).
-The repository stays at **Candidate** until a Colab or fresh-container run of the exact release revision is recorded
-above.
+A local pre-flight execution of the committed blob completed the whole default path on CPU — including the static
+audit and the conversion of the downloaded pickle inside the notebook — which catches defects but is **not** a
+supported runtime under REL1/REL10, and it ran with the two Hub files pre-staged, so the 67.6 MB Hub download has not
+been exercised end to end by the notebook; the hosted run must cover it. The repository stays at **Candidate** until a
+Colab or fresh-container run of the exact release revision is recorded above.
