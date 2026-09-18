@@ -1,0 +1,21 @@
+{
+  "format": "dimer_hf_snapshot",
+  "formatVersion": 1,
+  "modelKey": "mace-mp-0b2-small",
+  "modelId": "mace-foundations/mace-mp-0",
+  "revision": "e291ace2bfae073c3ebc7ae2f9479a525989baa7",
+  "files": [
+    {
+      "path": "README.md",
+      "bytes": 24,
+      "sha256": "d8d7a46d41a1a37fe4f0a5f637bf55c649310185329127d8a2204632e480be17"
+    },
+    {
+      "path": "mace-mp-0b2-small.model",
+      "bytes": 67622684,
+      "sha256": "d5773bf9440e96d6eb8c598f84bd0e6369fcfa432f626a87f890e07da3c651c9",
+      "note": "Pickled torch module (executable serialization, asset spec 11.2). Byte-identical to the upstream GitHub release asset ACEsuit/mace-mp mace_mp_0b2/mace-small-density-agnesi-stress.model. Never served: statically audited and converted once into mace-mp-0b2-small.config.json + mace-mp-0b2-small.safetensors (digests pinned in pipeline.py)."
+    }
+  ],
+  "totalBytes": 67622708
+}
