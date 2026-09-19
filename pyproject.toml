@@ -11,6 +11,9 @@ dependencies = [
   # audited, converted once into a JSON config + safetensors pair, and rebuilt from the installed mace-torch
   # (docs/WEIGHTS.md). mace-torch pins e3nn==0.4.4 itself and brings ase, opt_einsum and the rest.
   "torch==2.14.0",
+  # mace-torch imports torchmetrics, which imports torchvision when one is installed; hosted images ship a
+  # torchvision built for their own torch, so the matching build is pinned beside torch (ABI: torchvision::nms).
+  "torchvision==0.29.0",
   "mace-torch==0.3.16",
   "e3nn==0.4.4",
   "ase==3.29.0",
