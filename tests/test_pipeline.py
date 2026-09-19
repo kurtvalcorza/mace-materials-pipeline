@@ -155,6 +155,24 @@ def test_from_pretrained_refuses_before_model_imports(tmp_path, forbid_model_imp
         pl.MaceMaterialsPipeline.from_pretrained(weights_dir=tmp_path, require_source=False)
 
 
+def test_require_source_false_never_stages_even_when_the_manifest_is_present(tmp_path, monkeypatch, forbid_model_imports):
+    """A checkout keeps the committed manifest beside the converted pair and no pickle: the converted-only
+    path must not touch the source at all (it used to fall into stage_missing_files whenever the manifest existed)."""
+    _write_snapshot(tmp_path)
+    (tmp_path / SOURCE_MODEL_NAME).unlink()
+
+    def refuse(*args, **kwargs):
+        raise AssertionError("stage_missing_files must not run with require_source=False")
+
+    monkeypatch.setattr(pl, "stage_missing_files", refuse)
+    # only the converted pair is looked at: with it absent the error names the converted file, not the source
+    with pytest.raises(FileNotFoundError, match="converted file missing"):
+        pl.MaceMaterialsPipeline.from_pretrained(weights_dir=tmp_path, require_source=False)
+    # and the default (require_source=True) still goes through staging
+    with pytest.raises(AssertionError, match="must not run"):
+        pl.MaceMaterialsPipeline.from_pretrained(weights_dir=tmp_path)
+
+
 def test_convert_model_refuses_a_wrong_sized_source_before_unpickling(tmp_path, forbid_model_imports):
     (tmp_path / SOURCE_MODEL_NAME).write_bytes(b"not a model")
     with pytest.raises(ValueError, match="size"):

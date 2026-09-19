@@ -191,6 +191,24 @@ class _NoModel:
         return {}
 
 
+class _StubModel:
+    """A state-dict shape the scope check can reason about without torch."""
+
+    KEYS = (
+        "readouts.0.linear.weight",
+        "atomic_energies_fn.atomic_energies",
+        "scale_shift.scale",
+        "interactions.0.linear.weight",
+        "products.0.weight",
+        "interactions.1.linear.weight",
+        "products.1.weight",
+        "node_embedding.linear.weight",
+    )
+
+    def state_dict(self):
+        return dict.fromkeys(self.KEYS, object())
+
+
 def _pipeline_without_model():
     return MaceMaterialsPipeline(model=_NoModel(), config={}, device="cpu", weights_dir=pl.DEFAULT_WEIGHTS_DIR, source="test")
 
@@ -204,10 +222,11 @@ def test_load_artifact_rejects_bad_manifests_before_touching_weights(tmp_path, f
     pipe = _pipeline_without_model()
     manifest = {
         "format": pl.ARTIFACT_FORMAT,
+        "format_version": pl.ARTIFACT_FORMAT_VERSION,
         "base_model": {"id": MODEL_ID, "revision": MODEL_REVISION, "converted_sha256": dict(CONVERTED_SHA256)},
         "files": [{"path": pl.ARTIFACT_WEIGHTS_NAME, "bytes": 1, "sha256": "0" * 64}],
         "tensors": [],
-        "adapter": {},
+        "adapter": {"trainable_blocks": 0},
     }
     (tmp_path / pl.ARTIFACT_MANIFEST_NAME).write_text(json.dumps({**manifest, "format": "other"}))
     with pytest.raises(ValueError, match="artifact format"):
@@ -223,6 +242,49 @@ def test_load_artifact_rejects_bad_manifests_before_touching_weights(tmp_path, f
         pipe.load_artifact(tmp_path)
     (tmp_path / pl.ARTIFACT_MANIFEST_NAME).write_text(json.dumps(manifest))
     (tmp_path / pl.ARTIFACT_WEIGHTS_NAME).write_bytes(b"x")
+    with pytest.raises(ValueError, match="digest or size mismatch"):
+        pipe.load_artifact(tmp_path)
+
+
+def _scope_manifest(**overrides):
+    stub = _StubModel()
+    manifest = {
+        "format": pl.ARTIFACT_FORMAT,
+        "format_version": pl.ARTIFACT_FORMAT_VERSION,
+        "base_model": {"id": MODEL_ID, "revision": MODEL_REVISION, "converted_sha256": dict(CONVERTED_SHA256)},
+        "files": [{"path": pl.ARTIFACT_WEIGHTS_NAME, "bytes": 1, "sha256": "0" * 64}],
+        "tensors": sorted(k for k in stub.KEYS if k.startswith(pl._trainable_prefixes(1))),
+        "adapter": {"trainable_blocks": 1},
+    }
+    manifest.update(overrides)
+    return manifest
+
+
+def test_load_artifact_enforces_the_bounded_scope_before_deserialising(tmp_path, forbid_model_imports):
+    pipe = MaceMaterialsPipeline(model=_StubModel(), config={}, device="cpu", weights_dir=pl.DEFAULT_WEIGHTS_DIR, source="t")
+    (tmp_path / pl.ARTIFACT_WEIGHTS_NAME).write_bytes(b"x")  # never opened: every case below fails first
+    cases = [
+        (_scope_manifest(format_version="0.9"), "format_version"),
+        (_scope_manifest(files=[]), "exactly one weights file"),
+        (_scope_manifest(files=[{"path": "adapter.safetensors", "bytes": 1, "sha256": "0" * 64}] * 2), "exactly one"),
+        (_scope_manifest(files=[{"path": "other.safetensors", "bytes": 1, "sha256": "0" * 64}]), "must be named"),
+        (_scope_manifest(files=[{"path": "../adapter.safetensors", "bytes": 1, "sha256": "0" * 64}]), "must be named"),
+        (_scope_manifest(adapter={}), "trainable_blocks must be an int"),
+        (_scope_manifest(adapter={"trainable_blocks": True}), "trainable_blocks must be an int"),
+        (_scope_manifest(adapter={"trainable_blocks": 3}), "trainable_blocks must be an int in"),
+        # a backbone tensor smuggled in beside the allowed ones
+        (_scope_manifest(tensors=sorted([*_scope_manifest()["tensors"], "node_embedding.linear.weight"])), "does not match"),
+        # a tensor the declared scope allows but the artifact does not carry
+        (_scope_manifest(tensors=_scope_manifest()["tensors"][1:]), "does not match"),
+        # scope 0 declared while block-1 tensors are listed
+        (_scope_manifest(adapter={"trainable_blocks": 0}), "does not match"),
+    ]
+    for manifest, message in cases:
+        (tmp_path / pl.ARTIFACT_MANIFEST_NAME).write_text(json.dumps(manifest))
+        with pytest.raises(ValueError, match=message):
+            pipe.load_artifact(tmp_path)
+    # the well-formed manifest gets as far as the digest check (the weights file is a placeholder)
+    (tmp_path / pl.ARTIFACT_MANIFEST_NAME).write_text(json.dumps(_scope_manifest()))
     with pytest.raises(ValueError, match="digest or size mismatch"):
         pipe.load_artifact(tmp_path)
 

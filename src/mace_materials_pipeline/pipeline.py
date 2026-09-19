@@ -34,6 +34,7 @@ and `numpy` are used for structure handling and are imported freely.
 
 from __future__ import annotations
 
+import contextlib
 import copy
 import hashlib
 import io
@@ -48,6 +49,21 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+
+
+@contextlib.contextmanager
+def _float64_default() -> Any:
+    """Run a block with torch's default dtype set to float64 (the model's dtype) and hand the caller's default
+    back afterwards, even on failure. Loading this pipeline must not change tensor creation elsewhere in the
+    hosting process, while every tensor mace-torch builds for us (model, graph data) must be float64."""
+    import torch
+
+    previous = torch.get_default_dtype()
+    torch.set_default_dtype(torch.float64)
+    try:
+        yield
+    finally:
+        torch.set_default_dtype(previous)
 
 MODEL_ID = "mace-foundations/mace-mp-0"
 MODEL_REVISION = "e291ace2bfae073c3ebc7ae2f9479a525989baa7"
@@ -382,29 +398,29 @@ def _json_ready(value: Any) -> Any:
 
 def build_model(config: Mapping[str, Any]) -> Any:
     """Instantiate `ScaleShiftMACE` from the converted JSON config using the installed mace-torch."""
+    import mace  # noqa: F401  (import order: mace sets TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD before e3nn loads its constants)
     import numpy as np
     import torch
-
-    torch.set_default_dtype(torch.float64)
-    import mace  # noqa: F401  (import order: mace sets TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD before e3nn loads its constants)
     from e3nn import o3
     from mace.modules import ScaleShiftMACE, blocks
 
-    kwargs = {k: v for k, v in config.items() if k not in ("model_class", "dtype")}
-    kwargs["interaction_cls"] = getattr(blocks, kwargs["interaction_cls"])
-    kwargs["interaction_cls_first"] = getattr(blocks, kwargs["interaction_cls_first"])
-    kwargs["readout_cls"] = getattr(blocks, kwargs["readout_cls"])
-    kwargs["hidden_irreps"] = o3.Irreps(kwargs["hidden_irreps"])
-    kwargs["MLP_irreps"] = o3.Irreps(kwargs["MLP_irreps"])
-    kwargs["gate"] = {"silu": torch.nn.functional.silu}[kwargs["gate"]]
-    kwargs["atomic_energies"] = np.array(kwargs["atomic_energies"], dtype=float)
-    kwargs["atomic_inter_scale"] = float(kwargs["atomic_inter_scale"])
-    kwargs["atomic_inter_shift"] = float(kwargs["atomic_inter_shift"])
-    if kwargs.get("edge_irreps") is not None:
-        kwargs["edge_irreps"] = o3.Irreps(kwargs["edge_irreps"])
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
-        return ScaleShiftMACE(**kwargs)
+    # The model is float64: construct it under that default and hand the caller's default back afterwards.
+    with _float64_default():
+        kwargs = {k: v for k, v in config.items() if k not in ("model_class", "dtype")}
+        kwargs["interaction_cls"] = getattr(blocks, kwargs["interaction_cls"])
+        kwargs["interaction_cls_first"] = getattr(blocks, kwargs["interaction_cls_first"])
+        kwargs["readout_cls"] = getattr(blocks, kwargs["readout_cls"])
+        kwargs["hidden_irreps"] = o3.Irreps(kwargs["hidden_irreps"])
+        kwargs["MLP_irreps"] = o3.Irreps(kwargs["MLP_irreps"])
+        kwargs["gate"] = {"silu": torch.nn.functional.silu}[kwargs["gate"]]
+        kwargs["atomic_energies"] = np.array(kwargs["atomic_energies"], dtype=float)
+        kwargs["atomic_inter_scale"] = float(kwargs["atomic_inter_scale"])
+        kwargs["atomic_inter_shift"] = float(kwargs["atomic_inter_shift"])
+        if kwargs.get("edge_irreps") is not None:
+            kwargs["edge_irreps"] = o3.Irreps(kwargs["edge_irreps"])
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            return ScaleShiftMACE(**kwargs)
 
 
 # State-dict keys of the pickled checkpoint that mace-torch 0.3.16 no longer registers (the ZBL block now
@@ -435,49 +451,49 @@ def convert_model(path: str | Path | None = None, *, audit: bool = True) -> dict
             raise ValueError(
                 f"{SOURCE_MODEL_NAME}: pickle audit digest {summary['audit_sha256']} != pinned {PICKLE_AUDIT_SHA256}"
             )
-    import torch
-
-    torch.set_default_dtype(torch.float64)
     import mace  # noqa: F401
+    import torch
     from mace.tools.scripts_utils import extract_config_mace_model
     from safetensors.torch import save_file
 
-    started = time.perf_counter()
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
-        pickled = torch.load(source, map_location="cpu", weights_only=False)
-    if type(pickled).__name__ != MODEL_CLASS:
-        raise ValueError(f"{SOURCE_MODEL_NAME} unpickled to {type(pickled).__name__}, expected {MODEL_CLASS}")
-    config = {k: _json_ready(v) for k, v in extract_config_mace_model(pickled).items()}
-    config["model_class"] = type(pickled).__name__
-    config["dtype"] = str(next(pickled.parameters()).dtype).replace("torch.", "")
-    _config_from_json(config)
-    text = json.dumps(config, indent=2, sort_keys=True) + "\n"
-    (root / CONVERTED_CONFIG_NAME).write_bytes(text.encode("utf-8"))
+    # Conversion runs under a float64 default and restores the caller's default even on failure.
+    with _float64_default():
+        started = time.perf_counter()
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            pickled = torch.load(source, map_location="cpu", weights_only=False)
+        if type(pickled).__name__ != MODEL_CLASS:
+            raise ValueError(f"{SOURCE_MODEL_NAME} unpickled to {type(pickled).__name__}, expected {MODEL_CLASS}")
+        config = {k: _json_ready(v) for k, v in extract_config_mace_model(pickled).items()}
+        config["model_class"] = type(pickled).__name__
+        config["dtype"] = str(next(pickled.parameters()).dtype).replace("torch.", "")
+        _config_from_json(config)
+        text = json.dumps(config, indent=2, sort_keys=True) + "\n"
+        (root / CONVERTED_CONFIG_NAME).write_bytes(text.encode("utf-8"))
 
-    source_state = {k: v.contiguous() for k, v in pickled.state_dict().items()}
-    model = build_model(config)
-    result = model.load_state_dict({k: v for k, v in source_state.items() if k not in STALE_SOURCE_KEYS}, strict=False)
-    if result.unexpected_keys or any(not k.endswith("_zeroed") for k in result.missing_keys):
-        raise ValueError(
-            f"state-dict layout drift between the pickle and mace-torch: "
-            f"missing={result.missing_keys} unexpected={result.unexpected_keys}"
-        )
-    canonical = {k: v.contiguous() for k, v in model.state_dict().items()}
-    if len(canonical) != STATE_TENSORS:
-        raise ValueError(f"converted state dict has {len(canonical)} tensors, expected {STATE_TENSORS}")
-    for key, tensor in source_state.items():
-        if key not in STALE_SOURCE_KEYS and not torch.equal(tensor, canonical[key]):
-            raise ValueError(f"converted tensor {key} is not bit-identical to the pickled one")
-    save_file(canonical, str(root / CONVERTED_WEIGHTS_NAME), metadata={"format": "pt"})
-    report = verify_converted(root)
-    return {
-        "source": {"path": SOURCE_MODEL_NAME, "bytes": size, "sha256": digest},
-        "converted": report["files"],
-        "dropped_keys": list(STALE_SOURCE_KEYS),
-        "added_flag_keys": sorted(result.missing_keys),
-        "seconds": round(time.perf_counter() - started, 2),
-    }
+        source_state = {k: v.contiguous() for k, v in pickled.state_dict().items()}
+        model = build_model(config)
+        result = model.load_state_dict({k: v for k, v in source_state.items() if k not in STALE_SOURCE_KEYS}, strict=False)
+        if result.unexpected_keys or any(not k.endswith("_zeroed") for k in result.missing_keys):
+            raise ValueError(
+                f"state-dict layout drift between the pickle and mace-torch: "
+                f"missing={result.missing_keys} unexpected={result.unexpected_keys}"
+            )
+        canonical = {k: v.contiguous() for k, v in model.state_dict().items()}
+        if len(canonical) != STATE_TENSORS:
+            raise ValueError(f"converted state dict has {len(canonical)} tensors, expected {STATE_TENSORS}")
+        for key, tensor in source_state.items():
+            if key not in STALE_SOURCE_KEYS and not torch.equal(tensor, canonical[key]):
+                raise ValueError(f"converted tensor {key} is not bit-identical to the pickled one")
+        save_file(canonical, str(root / CONVERTED_WEIGHTS_NAME), metadata={"format": "pt"})
+        report = verify_converted(root)
+        return {
+            "source": {"path": SOURCE_MODEL_NAME, "bytes": size, "sha256": digest},
+            "converted": report["files"],
+            "dropped_keys": list(STALE_SOURCE_KEYS),
+            "added_flag_keys": sorted(result.missing_keys),
+            "seconds": round(time.perf_counter() - started, 2),
+        }
 
 
 # --------------------------------------------------------------------------------------------------
@@ -741,7 +757,7 @@ class MaceMaterialsPipeline:
         source may be absent (the DIMER-hosted case) as long as the converted pair verifies. `report`
         receives the static-audit summary and the conversion record when a conversion happens."""
         root = Path(weights_dir) if weights_dir is not None else DEFAULT_WEIGHTS_DIR
-        if require_source or (root / MANIFEST_NAME).is_file():
+        if require_source:
             stage_missing_files(root, allow_download=allow_download)
             snapshot = verify_snapshot(root)
             if not snapshot["converted"]:
@@ -761,8 +777,10 @@ class MaceMaterialsPipeline:
                 report({"conversion": "converted pair already present and digest-verified"})
             source = "converted from the manifest-verified source pickle"
         else:
+            # Converted-only deployment: only the code-free pair is verified, whether or not the committed
+            # source manifest happens to sit beside it; the pickle is never required or fetched here.
             verify_converted(root)
-            source = "converted pair, pinned digests (source pickle absent)"
+            source = "converted pair, pinned digests (source pickle not required)"
         config = _config_from_json(json.loads((root / CONVERTED_CONFIG_NAME).read_text(encoding="utf-8")))
         import torch
         from safetensors.torch import load_file
@@ -795,12 +813,13 @@ class MaceMaterialsPipeline:
 
         spec = KeySpecification(info_keys={"energy": "energy"}, arrays_keys={"forces": "forces"})
         data = []
-        for structure in checked:
-            atoms = to_atoms(structure)
-            if labels and (structure["energy"] is None or structure["forces"] is None):
-                raise ValueError(f"{structure['name']}: energy and forces are required for this operation")
-            conf = config_from_atoms(atoms, key_specification=spec)
-            data.append(AtomicData.from_config(conf, z_table=self._z_table, cutoff=R_MAX))
+        with _float64_default():  # graph tensors follow the default dtype; the model is float64
+            for structure in checked:
+                atoms = to_atoms(structure)
+                if labels and (structure["energy"] is None or structure["forces"] is None):
+                    raise ValueError(f"{structure['name']}: energy and forces are required for this operation")
+                conf = config_from_atoms(atoms, key_specification=spec)
+                data.append(AtomicData.from_config(conf, z_table=self._z_table, cutoff=R_MAX))
         return data
 
     def _loader(self, data: Sequence[Any], batch_size: int, shuffle: bool, seed: int = 0) -> Any:
@@ -830,26 +849,34 @@ class MaceMaterialsPipeline:
         started = time.perf_counter()
         data = self._dataset(checked, labels=False)
         model = self.model
-        results: list[dict[str, Any]] = []
-        for batch in self._loader(data, batch_size, shuffle=False):
-            stress = bool(batch.pbc.all()) if hasattr(batch, "pbc") else False
-            out = self._forward(model, batch, training=False, stress=stress)
-            ptr = batch.ptr.tolist()
-            energies = out["energy"].cpu().tolist()
-            node_energy = out["node_energy"].cpu()
-            forces = out["forces"].cpu()
-            stresses = out.get("stress")
-            for i in range(len(ptr) - 1):
-                lo, hi = ptr[i], ptr[i + 1]
-                results.append(
-                    {
+        # Stress is a batch-level switch in the MACE forward, so fully periodic structures (stress-eligible)
+        # and everything else are batched separately; results are put back in the caller's order.
+        eligible = [i for i, s in enumerate(checked) if s["periodic"] and all(s["pbc"])]
+        others = [i for i in range(len(checked)) if i not in set(eligible)]
+        results: list[dict[str, Any] | None] = [None] * len(checked)
+        for indices, stress in ((eligible, True), (others, False)):
+            if not indices:
+                continue
+            position = 0
+            for batch in self._loader([data[i] for i in indices], batch_size, shuffle=False):
+                out = self._forward(model, batch, training=False, stress=stress)
+                ptr = batch.ptr.tolist()
+                energies = out["energy"].cpu().tolist()
+                node_energy = out["node_energy"].cpu()
+                forces = out["forces"].cpu()
+                stresses = out.get("stress")
+                for i in range(len(ptr) - 1):
+                    lo, hi = ptr[i], ptr[i + 1]
+                    results[indices[position]] = {
                         "energy": float(energies[i]),
                         "energy_per_atom": float(energies[i]) / (hi - lo),
                         "node_energies": node_energy[lo:hi].tolist(),
                         "forces": forces[lo:hi].tolist(),
                         "stress": stresses[i].cpu().tolist() if (stress and stresses is not None) else None,
                     }
-                )
+                    position += 1
+        if any(r is None for r in results):
+            raise RuntimeError("prediction did not cover every structure")
         for structure, result in zip(checked, results, strict=True):
             result["name"] = structure["name"]
             result["n_atoms"] = structure["n_atoms"]
@@ -935,8 +962,9 @@ class MaceMaterialsPipeline:
 
         torch.manual_seed(seed)
         started = time.perf_counter()
-        calibration = self.calibrate_e0(train_checked) if calibrate else None
         model = self.model
+        pre_state = copy.deepcopy(model.state_dict())  # restored if anything below raises
+        calibration = None
         for name, param in model.named_parameters():
             param.requires_grad_(name.startswith(prefixes))
         params = [p for p in model.parameters() if p.requires_grad]
@@ -963,43 +991,54 @@ class MaceMaterialsPipeline:
                 count += batch.num_graphs
             return total / count
 
-        history: list[dict[str, Any]] = []
-        best_state = copy.deepcopy(model.state_dict())
-        best_epoch = 0
-        entry: dict[str, Any] = {
-            "epoch": 0,
-            "train_loss": None,
-            "val_loss": val_loss(),
-            "note": "frozen model after E0 calibration" if calibrate else "frozen model",
-        }
-        if val_checked:
-            entry["val"] = self.evaluate(val_checked)
-        history.append(entry)
-        best_val = entry["val_loss"] if entry["val_loss"] is not None else math.inf
-        if progress:
-            progress(entry)
-        for epoch in range(1, epochs + 1):
-            model.train()
-            total, count = 0.0, 0
-            for batch in self._loader(train_data, batch_size, shuffle=True, seed=seed + epoch):
-                out = self._forward(model, batch, training=True, stress=False)
-                loss = weighted_loss(out, batch)
-                optimiser.zero_grad(set_to_none=True)
-                loss.backward()
-                optimiser.step()
-                total += float(loss.detach()) * batch.num_graphs
-                count += batch.num_graphs
-            model.eval()
-            entry = {"epoch": epoch, "train_loss": total / count, "val_loss": val_loss()}
+        try:
+            calibration = self.calibrate_e0(train_checked) if calibrate else None
+            history: list[dict[str, Any]] = []
+            best_state = copy.deepcopy(model.state_dict())
+            best_epoch = 0
+            entry: dict[str, Any] = {
+                "epoch": 0,
+                "train_loss": None,
+                "val_loss": val_loss(),
+                "note": "frozen model after E0 calibration" if calibrate else "frozen model",
+            }
             if val_checked:
                 entry["val"] = self.evaluate(val_checked)
             history.append(entry)
+            best_val = entry["val_loss"] if entry["val_loss"] is not None else math.inf
             if progress:
                 progress(entry)
-            if entry["val_loss"] is None or entry["val_loss"] < best_val:
-                best_val = entry["val_loss"] if entry["val_loss"] is not None else best_val
-                best_state = copy.deepcopy(model.state_dict())
-                best_epoch = epoch
+            for epoch in range(1, epochs + 1):
+                model.train()
+                total, count = 0.0, 0
+                for batch in self._loader(train_data, batch_size, shuffle=True, seed=seed + epoch):
+                    out = self._forward(model, batch, training=True, stress=False)
+                    loss = weighted_loss(out, batch)
+                    optimiser.zero_grad(set_to_none=True)
+                    loss.backward()
+                    optimiser.step()
+                    total += float(loss.detach()) * batch.num_graphs
+                    count += batch.num_graphs
+                model.eval()
+                entry = {"epoch": epoch, "train_loss": total / count, "val_loss": val_loss()}
+                if val_checked:
+                    entry["val"] = self.evaluate(val_checked)
+                history.append(entry)
+                if progress:
+                    progress(entry)
+                if entry["val_loss"] is None or entry["val_loss"] < best_val:
+                    best_val = entry["val_loss"] if entry["val_loss"] is not None else best_val
+                    best_state = copy.deepcopy(model.state_dict())
+                    best_epoch = epoch
+        except BaseException:
+            # Transactional: a failure in calibration, training, validation or the progress callback
+            # leaves the model exactly as it was before adapt(), frozen, with no adapter attached.
+            model.load_state_dict(pre_state, strict=True)
+            model.eval()
+            for param in model.parameters():
+                param.requires_grad_(False)
+            self.adapter = None
+            raise
         model.load_state_dict(best_state, strict=True)
         model.eval()
         for param in model.parameters():
@@ -1058,31 +1097,62 @@ class MaceMaterialsPipeline:
         (out / ARTIFACT_MANIFEST_NAME).write_text(json.dumps(manifest, indent=2), encoding="utf-8")
         return out
 
-    def load_artifact(self, artifact_dir: str | Path) -> dict[str, Any]:
-        """Verify an adapter's manifest and digest, then overwrite exactly the tensors it carries."""
-        root = Path(artifact_dir)
-        manifest = json.loads((root / ARTIFACT_MANIFEST_NAME).read_text(encoding="utf-8"))
+    def _check_artifact_manifest(self, root: Path, manifest: Mapping[str, Any]) -> tuple[Path, list[str]]:
+        """Validate an adapter manifest before anything is deserialised: format and version, the pinned base,
+        exactly one weights entry named `adapter.safetensors` inside the artifact directory, an in-range
+        `trainable_blocks`, and a tensor list equal to the exact set that scope implies for this base."""
         if manifest.get("format") != ARTIFACT_FORMAT:
             raise ValueError(f"artifact format {manifest.get('format')!r} != {ARTIFACT_FORMAT!r}")
+        if manifest.get("format_version") != ARTIFACT_FORMAT_VERSION:
+            raise ValueError(
+                f"artifact format_version {manifest.get('format_version')!r} is not supported "
+                f"(expected {ARTIFACT_FORMAT_VERSION!r})"
+            )
         base = manifest.get("base_model", {})
         if (base.get("id"), base.get("revision")) != (MODEL_ID, MODEL_REVISION):
             raise ValueError("artifact was adapted from a different base model or revision")
         if base.get("converted_sha256") != CONVERTED_SHA256:
             raise ValueError("artifact records different converted-base digests")
+        files = manifest.get("files")
+        if not isinstance(files, list) or len(files) != 1:
+            raise ValueError("artifact manifest must list exactly one weights file")
+        entry = files[0]
+        if not isinstance(entry, Mapping) or entry.get("path") != ARTIFACT_WEIGHTS_NAME:
+            raise ValueError(f"artifact weights file must be named {ARTIFACT_WEIGHTS_NAME!r}")
+        weights_path = (root / entry["path"]).resolve()
+        if weights_path.parent != root.resolve():
+            raise ValueError("artifact weights file must sit inside the artifact directory")
+        adapter = manifest.get("adapter")
+        if not isinstance(adapter, Mapping):
+            raise ValueError("artifact manifest has no adapter record")
+        trainable_blocks = adapter.get("trainable_blocks")
+        if isinstance(trainable_blocks, bool) or not isinstance(trainable_blocks, int):
+            raise ValueError("artifact adapter.trainable_blocks must be an int")
+        prefixes = _trainable_prefixes(trainable_blocks)  # range-checked there
+        expected = sorted(k for k in self.model.state_dict() if k.startswith(prefixes))
+        if not isinstance(manifest.get("tensors"), list) or sorted(manifest["tensors"]) != expected:
+            raise ValueError(
+                f"artifact tensor list does not match the {len(expected)} tensors that "
+                f"trainable_blocks={trainable_blocks} may change on this base"
+            )
+        return weights_path, expected
+
+    def load_artifact(self, artifact_dir: str | Path) -> dict[str, Any]:
+        """Verify an adapter's manifest, scope and digest, then overwrite exactly the tensors the scope allows."""
+        root = Path(artifact_dir)
+        manifest = json.loads((root / ARTIFACT_MANIFEST_NAME).read_text(encoding="utf-8"))
+        weights_path, expected = self._check_artifact_manifest(root, manifest)
         entry = manifest["files"][0]
-        weights_path = root / entry["path"]
         digest = _sha256_file(weights_path)
         if digest != entry["sha256"] or weights_path.stat().st_size != entry["bytes"]:
             raise ValueError(f"{entry['path']}: digest or size mismatch; refusing to load")
         from safetensors.torch import load_file
 
         tensors = load_file(str(weights_path))
-        if sorted(tensors) != manifest["tensors"]:
-            raise ValueError("artifact tensor names differ from its manifest")
+        if sorted(tensors) != expected:
+            raise ValueError("artifact tensor names differ from the validated manifest")
         state = self.model.state_dict()
         for key, value in tensors.items():
-            if key not in state:
-                raise ValueError(f"artifact tensor {key} is not part of the base model")
             if tuple(value.shape) != tuple(state[key].shape):
                 raise ValueError(f"artifact tensor {key} has shape {tuple(value.shape)}, base has {tuple(state[key].shape)}")
         merged = dict(state)
