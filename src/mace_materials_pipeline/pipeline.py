@@ -834,6 +834,7 @@ class MaceMaterialsPipeline:
     def _forward(self, model: Any, batch: Any, *, training: bool, stress: bool) -> dict[str, Any]:
         import torch
 
+        batch = batch.to(self.device)  # graph tensors are built on the CPU; the model may live on CUDA
         data = batch.to_dict()
         # Forces are -dE/dx, so the forward needs autograd even at inference; no_grad would zero them.
         out = model(data, training=training, compute_force=True, compute_stress=stress)
@@ -975,9 +976,10 @@ class MaceMaterialsPipeline:
         val_data = self._dataset(val_checked, labels=True) if val_checked else []
 
         def weighted_loss(out: Mapping[str, Any], batch: Any) -> Any:
-            n_atoms = batch.ptr.diff().to(out["energy"].dtype)
-            e_loss = torch.mean(((out["energy"] - batch.energy) / n_atoms) ** 2)
-            f_loss = torch.mean((out["forces"] - batch.forces) ** 2)
+            device = out["energy"].device
+            n_atoms = batch.ptr.to(device).diff().to(out["energy"].dtype)
+            e_loss = torch.mean(((out["energy"] - batch.energy.to(device)) / n_atoms) ** 2)
+            f_loss = torch.mean((out["forces"] - batch.forces.to(device)) ** 2)
             return energy_weight * e_loss + forces_weight * f_loss
 
         def val_loss() -> float | None:

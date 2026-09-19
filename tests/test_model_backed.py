@@ -175,3 +175,32 @@ def test_adapt_is_transactional_when_the_progress_callback_raises(pipe, structur
     assert all(torch.equal(before[k], after[k]) for k in before)  # the E0 calibration is undone too
     assert torch.equal(energies_before, pipe.model.atomic_energies_fn.atomic_energies)
 
+
+@pytest.mark.skipif(not __import__("torch").cuda.is_available(), reason="CUDA device required")
+def test_predict_and_adapt_run_on_a_cuda_device(structure, tmp_path):
+    """Regression: the graph batches are built on the CPU and must follow the model to CUDA (the Kaggle T4 run
+    failed in the first forward with mat2 on cuda:0 vs other tensors on cpu)."""
+    import torch
+
+    gpu = MaceMaterialsPipeline.from_pretrained(device="cuda:0")
+    cpu = MaceMaterialsPipeline.from_pretrained(device="cpu")
+    molecule = {"symbols": ["O", "H", "H"], "positions": [[0, 0, 0], [0.96, 0, 0], [-0.24, 0.93, 0]]}
+    a = gpu.predict([structure, molecule])["results"]
+    b = cpu.predict([structure, molecule])["results"]
+    assert abs(a[0]["energy"] - b[0]["energy"]) < 1e-6 and a[0]["stress"] is not None and a[1]["stress"] is None
+    assert np.abs(np.array(a[0]["forces"]) - np.array(b[0]["forces"])).max() < 1e-6
+    rng = random.Random(7)
+    records = []
+    for i in range(6):
+        record = build_sample_structure("Cu32", strain=rng.uniform(-0.02, 0.02), sigma=0.1, rng=rng)
+        record["energy"], record["forces"] = _emt_energy_forces(to_atoms(record))
+        record["name"] = f"gpu-{i}"
+        records.append(record)
+    result = gpu.adapt(records[:4], records[4:], epochs=1, trainable_blocks=0, batch_size=2)
+    assert result["best_epoch"] in (0, 1) and result["history"][-1]["val_loss"] is not None
+    artifact = gpu.save_artifact(tmp_path / "adapter", {"note": "cuda"})
+    reloaded = MaceMaterialsPipeline.from_artifact(artifact, device="cpu")
+    x = gpu.predict(records[4:])["results"][0]["energy"]
+    y = reloaded.predict(records[4:])["results"][0]["energy"]
+    assert abs(x - y) < 1e-6 and torch.cuda.is_available()
+
