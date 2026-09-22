@@ -5,7 +5,7 @@ pipeline_tag: other
 task: "Materials Science - Atomistic Energy, Force & Stress Prediction (Foundation Interatomic Potential)"
 base_model: mace-foundations/mace-mp-0
 date_published: "2024-11-12"
-date_published_source: "Publication date of the upstream GitHub release `mace_mp_0b2` (ACEsuit/mace-mp, published 2024-11-12T16:22:10Z, asset `mace-small-density-agnesi-stress.model` uploaded 2024-11-12T13:21:51Z), whose asset is byte-identical (SHA-256 `d5773bf9…`) to the pinned Hub file `mace-mp-0b2-small.model`. The Hub repository `mace-foundations/mace-mp-0` was created later (`createdAt` 2025-05-22T09:19:34Z) as a mirror. The fleet inventory's `~2023-12` is the date of the original MACE-MP-0 release, not of the 0b2 checkpoint packaged here, and is superseded."
+date_published_source: "Publication date of the upstream GitHub release `mace_mp_0b2` (ACEsuit/mace-mp, published 2024-11-12T16:22:10Z, asset `mace-small-density-agnesi-stress.model` uploaded 2024-11-12T13:21:51Z), whose asset is byte-identical (SHA-256 `d5773bf9…`) to the pinned Hub file `mace-mp-0b2-small.model`. The Hub repository `mace-foundations/mace-mp-0` was created later (`createdAt` 2025-05-22T09:19:34Z) as a mirror. The previously recorded `~2023-12` is the date of the original MACE-MP-0 release, not of the 0b2 checkpoint packaged here, and is superseded."
 ---
 
 # MACE-MP-0b2 small — Foundation Interatomic Potential (Energy, Force & Stress Prediction and Bounded Fine-Tuning)
@@ -153,7 +153,7 @@ The model must not be used to present predicted energies, forces, stresses or de
 
 | Field | Status |
 |---|---|
-| **DIMER status** | **Planned / conditional** — the asset-format and deserialization-trust review the fleet inventory requires is what this repository implements; the review's acceptance is Kurt's call |
+| **DIMER status** | **Planned / conditional** — the asset-format and deserialization-trust review DIMER requires is what this repository implements; the review's acceptance is the maintainer's call |
 | Licence | MIT (weights, the upstream `mace` code and this repository's dependencies) — use, modification, redistribution and commercial use permitted with the licence and notices preserved |
 | Weights | Would be redistributed converted, not unmodified: the served artifact is the deterministic safetensors + JSON pair derived from the pinned pickle, with both identities recorded (asset spec §11.2); this repository redistributes neither |
 | Remote code | **Not required** — no Hub-hosted module is imported and `trust_remote_code` does not exist in this stack; the model class comes from `mace-torch==0.3.16` on PyPI |
@@ -162,7 +162,7 @@ The model must not be used to present predicted energies, forces, stresses or de
 | Upload format | `mace-mp-0b2-small.safetensors` (67,400,566 bytes, SHA-256 `2ed99065…`) + `mace-mp-0b2-small.config.json` (3,279 bytes, SHA-256 `130b6411…`); **the `.model` file must not be uploaded** |
 | Input contract | Structures as `{symbols, positions, cell, pbc}` mappings or extended XYZ; energies in eV, forces in eV/Å, stress in eV/Å³ |
 
-**The open question is the trust boundary, not the licence or the code.** The fleet inventory records for this row an "asset-format/deserialization review" and states that "no silent conversion is assumed". This repository performs the conversion loudly: the source is immutable and digested, the audit is static and pinned, the conversion is deterministic and its fidelity is measured, and both asset identities are recorded — the shape the asset specification prescribes for a code-capable upstream format. What remains is whether a one-time, audited unpickle in the build environment (and in the tutorial runtime, where the notebook converts the downloaded file) meets the DIMER bar, or whether DIMER should host only the converted pair produced and verified once by the maintainer. Either way the served artifact is the same safetensors file.
+**The open question is the trust boundary, not the licence or the code.** DIMER requires for this profile an asset-format/deserialization review, and assumes no silent conversion. This repository performs the conversion loudly: the source is immutable and digested, the audit is static and pinned, the conversion is deterministic and its fidelity is measured, and both asset identities are recorded — the shape the asset specification prescribes for a code-capable upstream format. What remains is whether a one-time, audited unpickle in the build environment (and in the tutorial runtime, where the notebook converts the downloaded file) meets the DIMER bar, or whether DIMER should host only the converted pair produced and verified once by the maintainer. Either way the served artifact is the same safetensors file.
 
 ## Runtime
 
