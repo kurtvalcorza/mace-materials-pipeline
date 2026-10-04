@@ -805,6 +805,22 @@ class MaceMaterialsPipeline:
             _z_table=AtomicNumberTable(list(SUPPORTED_ATOMIC_NUMBERS)),
         )
 
+    def reset_to_pretrained(self) -> dict[str, Any]:
+        """Return to the pinned base weights: re-verify the converted pair, reload it strictly into the same
+        model object and drop any adapter. Calibration, fine-tuning and a loaded artifact all change the
+        weights in place, so every experiment that should start from the foundation model calls this first."""
+        from safetensors.torch import load_file
+
+        verify_converted(self.weights_dir)
+        state = load_file(str(self.weights_dir / CONVERTED_WEIGHTS_NAME))
+        self.model.load_state_dict(state, strict=True)
+        self.model.eval()
+        for p in self.model.parameters():
+            p.requires_grad_(False)
+        was_adapted = self.adapter is not None
+        self.adapter = None
+        return {"reset_to": "pinned base weights (converted pair, digest-verified)", "was_adapted": was_adapted}
+
     # ---- batching -------------------------------------------------------------------------------------
 
     def _dataset(self, checked: Sequence[Mapping[str, Any]], *, labels: bool) -> list[Any]:
@@ -891,15 +907,43 @@ class MaceMaterialsPipeline:
             "seconds": round(time.perf_counter() - started, 3),
         }
 
+    def _predict_in_chunks(
+        self, structures: Sequence[Mapping[str, Any]], *, batch_size: int = 8, check_only: bool = False
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        """`predict` over a list of any length: consecutive chunks that each respect the per-call ceilings
+        (MAX_STRUCTURES_PER_CALL structures, MAX_ATOMS_PER_CALL atoms). Returns (checked, results); with
+        `check_only` it validates every structure and returns (checked, [])."""
+        if isinstance(structures, Mapping) or not isinstance(structures, Sequence) or isinstance(structures, (str, bytes)):
+            raise ValueError("structures must be a list of structure mappings")
+        if not structures:
+            raise ValueError("at least one structure is required")
+        checked_all = [_check_structure(s, i) for i, s in enumerate(structures)]
+        if check_only:
+            return checked_all, []
+        chunks: list[list[dict[str, Any]]] = [[]]
+        atoms = 0
+        for structure in checked_all:
+            full = len(chunks[-1]) >= MAX_STRUCTURES_PER_CALL or atoms + structure["n_atoms"] > MAX_ATOMS_PER_CALL
+            if chunks[-1] and full:
+                chunks.append([])
+                atoms = 0
+            chunks[-1].append(structure)
+            atoms += structure["n_atoms"]
+        results: list[dict[str, Any]] = []
+        for chunk in chunks:
+            results.extend(self.predict(chunk, batch_size=batch_size)["results"])
+        return checked_all, results
+
     def evaluate(self, structures: Sequence[Mapping[str, Any]], *, batch_size: int = 8) -> dict[str, Any]:
-        """Energy and force errors against the reference labels carried by the structures."""
+        """Energy and force errors against the reference labels carried by the structures. Any number of
+        structures: they are scored in chunks that respect the per-call ceilings of `predict`."""
         from .metrics import regression_metrics
 
-        checked = _check_structures(structures)
+        checked, _ = self._predict_in_chunks(structures, batch_size=batch_size, check_only=True)
         if any(s["energy"] is None or s["forces"] is None for s in checked):
             raise ValueError("every structure needs energy and forces for evaluation")
-        prediction = self.predict(checked, batch_size=batch_size)
-        return regression_metrics(checked, prediction["results"])
+        checked, results = self._predict_in_chunks(checked, batch_size=batch_size)
+        return regression_metrics(checked, results)
 
     # ---- adaptation -----------------------------------------------------------------------------------
 
@@ -910,13 +954,12 @@ class MaceMaterialsPipeline:
         import numpy as np
         import torch
 
-        checked = _check_structures(structures)
+        checked, results = self._predict_in_chunks(structures)
         if any(s["energy"] is None for s in checked):
             raise ValueError("every structure needs an energy for E0 calibration")
-        prediction = self.predict(checked)
         elements = sorted({s for c in checked for s in c["symbols"]})
         counts = np.array([[c["symbols"].count(el) for el in elements] for c in checked], dtype=float)
-        residual = np.array([c["energy"] - r["energy"] for c, r in zip(checked, prediction["results"], strict=True)])
+        residual = np.array([c["energy"] - r["energy"] for c, r in zip(checked, results, strict=True)])
         shifts, *_ = np.linalg.lstsq(counts, residual, rcond=None)
         table = _atomic_symbols()
         with torch.no_grad():
@@ -947,9 +990,18 @@ class MaceMaterialsPipeline:
         blocks (1 = the last block, 1.92 M of 8.22 M parameters). Loss = energy_weight × MSE(per-atom
         energy) + forces_weight × MSE(force components), Adam, fixed learning rate, no scheduler. The
         epoch with the lowest validation loss is kept; epoch 0 records the (E0-calibrated) frozen model
-        so every number is comparable to the starting point."""
+        so every number is comparable to the starting point.
+
+        An adapted pipeline (after `adapt` or `load_artifact`) is refused: training would continue from the
+        adapted weights while epoch 0 still claimed to be the frozen model, and the exported adapter would not
+        describe every change from the base. Call `reset_to_pretrained()` first."""
         from .samples import validate_dataset
 
+        if self.adapter is not None:
+            raise ValueError(
+                "this pipeline is already adapted; call pipe.reset_to_pretrained() to return to the pinned base "
+                "weights before adapting again (otherwise training would stack on the previous adaptation)"
+            )
         if not isinstance(epochs, int) or not 1 <= epochs <= 50:
             raise ValueError("epochs must be an int in 1..50")
         if not (0.0 < lr <= 0.1):

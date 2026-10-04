@@ -1,0 +1,6 @@
+# Overrides for tutorials/requirements-colab.lock.txt (see the compile command in tools/notebook_template.py).
+# mace-torch 0.3.16 declares python-hostlist, which is published only as an sdist and is imported only by
+# mace/tools/slurm_distributed.py inside `try: import hostlist / except ImportError: hostlist = None` (SLURM jobs).
+# The notebook's path never imports it, and the isolated install accepts wheels only, so it is left out of the lock
+# and the install runs with --no-deps over the otherwise complete locked closure.
+python-hostlist ; sys_platform == "never"

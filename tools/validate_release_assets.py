@@ -1,6 +1,6 @@
 """Static release-asset validation for the MACE-MP-0b2 small materials DIMER pipeline.
 
-Checks the STANDALONE tutorial notebook (DIMER Notebook Specification 2.0 §4), the tutorial
+Checks the STANDALONE tutorial notebook (DIMER Notebook Specification 2.2 §4), the tutorial
 registry, model card, README, STATUS.md and weight documentation for source conformance and
 cross-document identity consistency, and runs the generator parity checks (PAR1-PAR3).
 
@@ -38,6 +38,13 @@ EXPECTED_OUTPUTS = (
     "outputs/mace_materials_predictions.json",
     "outputs/mace_materials_adapter",
     "outputs/mace_materials_result.json",
+    "outputs/mace_materials_activity_adapter",
+    # MMC-m2: BYOD outputs are named as BYOD and never overwrite the sample's
+    "outputs/mace_materials_byod_dataset.xyz",
+    "outputs/mace_materials_byod_evaluation_report.json",
+    "outputs/mace_materials_byod_predictions.json",
+    "outputs/mace_materials_byod_adapter",
+    "outputs/mace_materials_byod_result.json",
 )
 CODE_MARKERS = (
     # Stage 3 (fixed cell): the audit + conversion report is printed before the model loads
@@ -47,8 +54,17 @@ CODE_MARKERS = (
     "records = generate_sample_dataset(seed=SEED)",
     "records = load_byod_dataset(byod_path)",
     "dataset_manifest = validate_dataset(records)",
-    "splits = split_dataset(records, val_fraction=VAL_FRACTION, test_fraction=TEST_FRACTION, seed=SEED)",
-    "write_dataset_xyz(records, 'outputs/mace_materials_sample_dataset.xyz')",
+    # MMC-M4: BYOD splits keep groups (trajectory tags, else compositions) on one side; the grouping is printed and checked
+    "BYOD_SPLIT = 'auto'",
+    "split_mode = 'stratified'",
+    "splits = split_dataset(records, val_fraction=VAL_FRACTION, test_fraction=TEST_FRACTION, seed=SEED, group_by=split_mode)",
+    "split_summary = split_report(splits, group_by=split_mode)",
+    "assert not split_summary['groups_in_more_than_one_split']",
+    "write_dataset_xyz(records, OUTPUTS['dataset'])",
+    # MMC-m2: a path on any runtime, the upload dialog only on Colab, actionable errors
+    "BYOD_PATH = ''",
+    "raise RuntimeError('USE_BYOD = True needs a file: this runtime has no Colab upload dialog, so set BYOD_PATH",
+    "if len(uploaded) != 1:",
     "validate_inputs([structure])",
     # Stage 5: zero-shot prediction and the physics checks on the frozen model
     "prediction = pipe.predict(test_records[:8])",
@@ -56,12 +72,15 @@ CODE_MARKERS = (
     "'gradient_consistency_diff'",
     "'extensivity_diff_per_atom'",
     "assert physics['gradient_consistency_diff'] < 1e-6",
+    # MMC-M2 / MMC-M3: Sections 5 and 6 score the foundation model even after an adaptation (BYOD re-run)
+    "if pipe.adapter is not None:\n    print({'reset_to_pretrained': pipe.reset_to_pretrained()})\ns0 = test_records[0]",
+    "if pipe.adapter is not None:\n    print({'reset_to_pretrained': pipe.reset_to_pretrained()})\nbaseline_composition = composition_baseline(train_records, test_records)",
     # Stage 6: trivial baselines fitted on train only and the frozen model's error
     "baseline_composition = composition_baseline(train_records, test_records)",
     "baseline_zero_force = zero_force_baseline(test_records)",
     "zero_shot_test = pipe.evaluate(test_records)",
-    # Stage 7: E0 calibration + bounded fine-tuning
-    "adapt_result = pipe.adapt(",
+    # Stage 7: E0 calibration + bounded fine-tuning, always from the pinned base weights (MMC-M2)
+    "print({'reset_to_pretrained': pipe.reset_to_pretrained()})\nt0 = time.perf_counter()\nadapt_result = pipe.adapt(",
     "trainable_blocks=TRAINABLE_BLOCKS",
     "lr=LEARNING_RATE",
     "'e0_calibration_eV'",
@@ -72,10 +91,17 @@ CODE_MARKERS = (
     "assert test_metrics['force_mae'] < zero_shot_test['force_mae']",
     # Stage 9: inference on new structures, artifact export, reload parity
     "new_prediction = pipe.predict(new_records)",
-    "pipe.save_artifact(artifact_dir, metadata=",
-    "reloaded = MaceMaterialsPipeline.from_artifact(artifact_dir, weights_dir=WEIGHTS_DIR, device=pipe.device)",
+    # MMC-M2 (ART8): export to a staging folder and replace the previous adapter only after reload parity holds
+    "model_pipe.save_artifact(staging, metadata=metadata)",
+    "fresh = MaceMaterialsPipeline.from_artifact(staging, weights_dir=WEIGHTS_DIR, device=model_pipe.device)",
+    "staging.rename(target)",
+    "reloaded, parity, artifact_manifest = export_and_reload(pipe, artifact_dir,",
     "assert parity['max_abs_energy_diff'] < 1e-9 and parity['max_abs_force_diff'] < 1e-9",
     "'reload_parity': parity",
+    # Section 10 activity: a separate pipeline from the same base, same epoch 0, its own adapter with reload parity
+    "activity_pipe = MaceMaterialsPipeline.from_pretrained(weights_dir=WEIGHTS_DIR, device=pipe.device)",
+    "_, activity_parity, _ = export_and_reload(activity_pipe, OUTPUTS['activity_adapter'],",
+    "assert start_diff < 1e-6",
 )
 MARKDOWN_MARKERS = (
     "**Capability:** energy, force and stress prediction for atomic structures and bounded fine-tuning of the foundation interatomic potential",
@@ -87,6 +113,39 @@ MARKDOWN_MARKERS = (
     "different level of theory",
     "multi-head replay",
     "split by trajectory or by composition",
+    # MMC-m3 (UNC6) and MMC-m7 (the process-wide torch.load default)
+    "**No uncertainty, no domain flag:**",
+    "no per-prediction uncertainty",
+    "`TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD=1`",
+    "`{symbols, positions, cell, pbc}`",
+)
+# Learner-facing text the review fixes removed; it must not come back (MMC-M1 in-kernel install/restart text, MMC-M3
+# the "re-run from that cell" instruction, MMC-m6 the literal double braces, MMC-m1 the old minimum-only contract).
+STALE_MARKDOWN = (
+    "Restart the runtime, then rerun",
+    "the cell stops with a restart instruction",
+    "installs the pinned dependencies",
+    "re-run from that cell",
+    "{{symbols",
+    "a dataset needs at least 8 labelled structures with unique names. BYOD",
+    "Google Colab or Jupyter, Python 3.12",
+)
+# The guided layer (NOTEBOOK_SPEC 2.2 §3.5, GDL1-GDL15; review MMC-m5): each marker with its minimum count.
+GUIDED_MARKERS = (
+    ("**Who this is for.**", 1),
+    ("**Input → Model → Output.**", 1),
+    ("**How to use this notebook.**", 1),
+    ("**Roadmap:**", 1),
+    ("**Predict before running:**", 6),
+    ("**What to notice:**", 7),
+    ("<summary>Check your reasoning</summary>", 7),
+    ("## 10. Your turn — change one thing", 1),
+    ("**Predict → Change one thing → Run → Observe → Explain**", 1),
+    ("## Troubleshooting", 1),
+    ("## Glossary", 1),
+    ("## Conclusion (your notes)", 1),
+    ("> **Infrastructure.**", 3),
+    ("**Optional experiments", 1),
 )
 # Repository-specific relaxation of the fleet's "unsafe deserialization" rule (asset spec §11.2): the
 # upstream asset is a pickle, and exactly one function in the carried pipeline module — the audited,
@@ -118,10 +177,10 @@ FORBIDDEN_OUTSIDE_MODULE = (
 # ---------------------------------------------------------------------------
 # Shared checks. Everything below is source/structure validation only. Passing
 # these checks is NOT clean-runtime execution evidence under DIMER Notebook
-# Specification 2.0; see docs/release-verification.md for the release gate.
+# Specification 2.2; see docs/release-verification.md for the release gate.
 # ---------------------------------------------------------------------------
 
-NOTEBOOK_SPEC = "2.0"
+NOTEBOOK_SPEC = "2.2"
 ALLOWED_PROFILES = {"E2E", "ARTIFACT-INFERENCE", "TASK-INFERENCE", "MULTI-CAPABILITY", "SMOKE"}
 STATUS_TOKENS = ("Candidate", "Release-grade")
 PLACEHOLDER = re.compile(r"\b(TODO|TBD|FIXME)\b|Insert text here|Tooltip:", re.I)
@@ -551,8 +610,11 @@ def _validate_embedded_modules(path: Path, notebook: dict, build) -> list[int]:
             cell["metadata"]["dimer"].get("module_sha256") == context["per_module_sha256"][rel],
             f"{path.name}: cell {index} module_sha256 tag does not match {rel}",
         )
+        # MMC-m5 (GDL11): the carried cell is the module plus the generator's one Infrastructure title line, collapsed.
+        _check(_cell_source(cell).startswith(build.CARRIED_TITLE_PREFIX), f"{path.name}: carried module cell {index} must open with its Infrastructure title")
+        _check(cell.get("metadata", {}).get("cellView") == "form", f"{path.name}: carried module cell {index} must be collapsed (cellView: form)")
         _check(
-            _cell_source(cell).rstrip("\n") + "\n" == context["embedded"][module],
+            build.strip_carried_title(_cell_source(cell)).rstrip("\n") + "\n" == context["embedded"][module],
             f"{path.name}: embedded module cell {index} differs from {rel} (PAR1); regenerate the notebook",
         )
     return [index for index, _ in tagged]
@@ -640,7 +702,9 @@ def _validate_notebook_content(
     model_id, _revision = _package_identity()
     stripped = _mask_audited_conversion(path, code_cells, embedded)
     code = "\n".join(stripped.values())
-    outside = "\n".join(text for index, text in stripped.items() if index not in embedded)
+    # MMC-M1: the two kernel cells (isolated install, router) are generator infrastructure, not learner code.
+    kernel = {index for index, source, _ in code_cells if "# dimer: kernel cell" in source}
+    outside = "\n".join(text for index, text in stripped.items() if index not in embedded and index not in kernel)
     _check(UNSAFE_LOAD.search(code) is None, f"{path.name}: unsafe deserialization outside {AUDITED_CONVERSION_FUNCTION}")
     _check(f"{AUDITED_CONVERSION_FUNCTION}(" not in outside, f"{path.name}: {AUDITED_CONVERSION_FUNCTION} must not be called outside the carried module cells")
     missing = [marker for marker in COMMON_CODE_MARKERS + CODE_MARKERS if marker not in code]
@@ -653,6 +717,11 @@ def _validate_notebook_content(
         f"pipe = {MODEL_LOAD_EXPR}" in outside,
         f"{path.name}: must load through {MODEL_LOAD_EXPR} (INF1)",
     )
+    _validate_isolated_runtime(path, code_cells)
+    stale_md = [marker for marker in STALE_MARKDOWN if marker in markdown]
+    _check(not stale_md, f"{path.name}: stale learner-facing text: {stale_md}")
+    thin = [f"{marker} (x{markdown.count(marker)} < {minimum})" for marker, minimum in GUIDED_MARKERS if markdown.count(marker) < minimum]
+    _check(not thin, f"{path.name}: guided layer incomplete (MMC-m5): {thin}")
     _validate_gates(path, code_cells)
     _validate_bootstrap_guard(path, code_cells)
     for filename in EXPECTED_OUTPUTS:
@@ -661,6 +730,20 @@ def _validate_notebook_content(
     _check(not missing_md, f"{path.name}: missing learner-facing markers: {missing_md}")
     _check(f"**Profile:** `{EXPECTED_PROFILE}`" in markdown, f"{path.name}: markdown must state the profile")
     _check(f"https://huggingface.co/{model_id}" in markdown, f"{path.name}: references must link {model_id}")
+
+
+def _validate_isolated_runtime(path: Path, code_cells: list[tuple[int, str, ast.Module]]) -> None:
+    """MMC-M1: exactly two kernel cells (the isolated install and the router); every other cell runs in the managed
+    Python 3.12.12 uv environment, so nothing is pip-installed into the kernel and no restart is needed."""
+    kernel_raw = [source for _index, source, _tree in code_cells if "# dimer: kernel cell" in source]
+    _check(len(kernel_raw) == 2, f"{path.name}: exactly two kernel cells (isolated install and router) are expected (MMC-M1)")
+    install = next((k for k in kernel_raw if "LOCK_TEXT = r" in k), "")
+    for needed in ('"--managed-python"', '"--require-hashes"', '"--only-binary", ":all:"', '"--no-deps"', "UV_SHA256", "LOCK_SHA256", 'platform.machine() != "x86_64"', "MANAGED_PYTHON = '3.12.12'"):
+        _check(needed in install, f"{path.name}: the isolated install cell must use {needed} (MMC-M1)")
+    _check("python-hostlist==" not in install, f"{path.name}: the carried lock must not pin python-hostlist (sdist only; lock_no_deps)")
+    router = "\n".join(kernel_raw)
+    _check("_ip.input_transformers_cleanup.append(_route_to_isolated_runtime)" in router, f"{path.name}: later cells must be routed to the isolated environment (MMC-M1)")
+    _check("module.__spec__ = importlib.machinery.ModuleSpec(name, None, is_package=package)" in router, f"{path.name}: the worker's google.colab stubs must carry a module spec")
 
 
 def validate_notebooks() -> None:
