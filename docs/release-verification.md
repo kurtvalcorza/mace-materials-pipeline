@@ -18,8 +18,9 @@ CI runs `tools/validate_release_assets.py`, which checks:
   path; one cell per carried module (`pipeline.py`, `samples.py`, `metrics.py`), each equal to its source after the
   generator's documented rewrites; the inline `MANIFEST` equal to the committed snapshot manifest and the inline
   `PINS` equal to the `pyproject.toml` runtime pins; the notebook byte-identical (on LF) to
-  `tools/build_notebook.py` output for its recorded revision; the pinned-install cell with its
-  restart-on-stale-import guard; `NOTEBOOK_SOURCE` recorded in exports;
+  `tools/build_notebook.py` output for its recorded revision; exactly one kernel cell, which builds (or
+  reuses) the hash-locked isolated environment from `tutorials/requirements-colab.lock.txt` and routes every later cell
+  to it (no in-kernel install, no restart); `NOTEBOOK_SOURCE` recorded in exports;
 - `MODEL_ID`/`MODEL_REVISION` bound only in the carried module cell (and repeated in the inline manifest, which the
   notebook asserts against the module before fetching), the revision a 40-hex immutable commit, and the same
   identity string in `README.md`, `MODEL_CARD.md` and `docs/WEIGHTS.md` with no stray revisions;

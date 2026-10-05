@@ -46,9 +46,33 @@ TEMPLATE = {
     "notebook_name": "mace_materials_colab.ipynb",
     "profile": "E2E",
     "mode": "GUIDED",
+    "isolated_runtime": True,
+    "infrastructure_labels": True,
+    # The fleet's uv isolated-environment mechanism (bioclip2-biodiversity-pipeline, siglip-v1-zero-shot-pipeline): a
+    # managed CPython, a size- and SHA-256-verified uv wheel, and a lock compiled from the pyproject pins with
+    # `uv pip compile pyproject.toml --python-version 3.12 --python-platform x86_64-manylinux_2_28 --generate-hashes
+    # --only-binary :all: --no-binary python-hostlist -o tutorials/requirements-colab.lock.txt`. mace-torch depends on
+    # python-hostlist, which publishes only a source archive; its sdist hash is locked and built in place.
+    "managed_python": "3.12.12",
+    "uv": {
+        "version": "0.12.15",
+        "url": "https://files.pythonhosted.org/packages/1e/fd/432451d732917c49152a291de3ef171aa6b0f1a22d39780fb2c1f085ca4c/uv-0.12.15-py3-none-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+        "bytes": 20081404,
+        "sha256": "aee9802f46bae436bd91751bb33ddeb379ef1596b5c19df193219d545d244b60",
+    },
+    "lock": "tutorials/requirements-colab.lock.txt",
+    "lock_source_builds": ["python-hostlist"],
+    "guided": {
+        "opening": [
+            (
+                "**Who this notebook is for.** A learner who knows basic Python, has run a Colab or Jupyter notebook, and wants to see how a machine-learned interatomic potential predicts energies and forces for a crystal, how to check that it behaves like physics says it must, and how to adapt a foundation potential to a new level of theory without fooling themselves. No prior experience with MACE or equivariant networks is assumed; *interatomic potential*, *equivariance*, *per-element reference energy*, *MAE* and the other terms are explained where they first matter and again in the **Glossary**. The intended audience is learners and practitioners in computational materials science; this is a teaching run, not a validated potential. CPU is enough (about two minutes of model time).\n\n**Input → Model → Output.**\n\n| | What it is in this notebook |\n|---|---|\n| Input | atomic structures — element symbols, positions in Å, a periodic cell (default: 48 generated, rattled and strained fcc Cu₃₂, Al₃₂ and Cu₁₆Al₁₆ supercells labelled by ASE's EMT potential, split 27 / 9 / 12; BYOD: your own labelled extended-XYZ file) |\n| Model | MACE-MP-0b2 small, an E(3)-equivariant message-passing potential trained on Materials Project DFT data; Section 7 calibrates its per-element reference energies and trains its readouts and last interaction block |\n| Output | total and per-atom energy (eV), forces (eV/Å) and stress per structure; energy and force MAE against EMT labels, beside a composition baseline and a zero-force baseline; a 16 MB adapter that reloads to identical predictions |\n\n**How to use this notebook.** Choose a runtime (CPU is enough; a GPU is used automatically when present), then **Runtime → Run all**. Run all completes in one pass: Section 1 installs nothing into the notebook's own Python, so no restart is needed. Sections 1–3 are **infrastructure** — the isolated environment, the carried package and the pinned, audited and converted model — and their cells are collapsed. The learning path starts in Section 4. Form fields (`# @param`) are the knobs. Re-running Section 6 or 7 starts again from the frozen foundation model, so a frozen score is never taken from an adapted model. Before each principal result the notebook asks you to **Predict**; after it come **What to notice** and a collapsible **Check your reasoning** with a worked answer from the recorded Kaggle T4 run of 19 September 2026 (`docs/release-verification.md`; the physics-check magnitudes and the calibration shifts are from the recorded CPU pre-flight of the day before). **Troubleshooting**, a **Glossary** and a **Conclusion** template are at the end.\n\n**Roadmap:** 1–3 infrastructure → 4 a generated, labelled dataset, validation and a composition-stratified split *(evaluation practice)* → 5 zero-shot prediction and five physics checks *(core concept: equivariance and forces as gradients)* → 6 two baselines and the frozen model's error *(evaluation practice)* → 7 calibration and bounded fine-tuning *(core concept)* → 8 held-out evaluation → 9 new structures, export and reload *(engineering)* → interpretation, troubleshooting, glossary, conclusion."
+            )
+        ]
+    },
     "run_all": (
-        "Selecting **Run all** in a fresh supported runtime installs the pinned dependencies (torch, mace-torch, e3nn, ase, "
-        "numpy, safetensors, huggingface-hub), stages and digest-verifies the pinned MACE-MP-0b2 small source asset (67.6 MB "
+        "Selecting **Run all** in a fresh supported runtime builds an isolated environment from the hash-locked pins (torch, "
+        "mace-torch, e3nn, ase, numpy, safetensors, huggingface-hub; nothing is installed into the notebook's own Python, so no "
+        "restart is needed and Run all completes in one pass), stages and digest-verifies the pinned MACE-MP-0b2 small source asset (67.6 MB "
         "pickled module from the Hub), statically audits every global and generated source string that pickle would execute "
         "and refuses anything outside the torch / e3nn / mace allow-lists, unpickles it exactly once to write a code-free "
         "JSON config + safetensors pair whose digests are pinned in the module, rebuilds the model from the installed "
@@ -65,7 +89,7 @@ TEMPLATE = {
         "download."
     ),
     "byod": (
-        "After the tutorial workflow completes, set `USE_BYOD = True` in Section 4 and re-run from that cell to supply your own "
+        "After the tutorial workflow completes, set `USE_BYOD = True` in Section 4 — with `BYOD_PATH` set to your file (Kaggle, Jupyter) or left empty for the Colab upload dialog — and re-run from that cell to supply your own "
         "labelled structures as an extended-XYZ file (one frame per structure, a `Lattice` and `pbc` when periodic, an `energy` "
         "in eV and a `forces` array in eV/Å per frame). They pass through the same validation, composition-stratified split, "
         "baselines, calibration, adaptation, held-out evaluation, inference, artifact export and reload-parity cells as the "
@@ -120,7 +144,7 @@ TEMPLATE = {
         "- **Runtime:** a fresh supported runtime (Google Colab or Jupyter, Python 3.12). CPU is enough — a 32-atom cell is scored in under 0.1 s and the default fine-tuning takes about a minute — and CUDA is used automatically when present. The model runs in float64, as upstream ships it.",
         "- **Knowledge:** what an interatomic potential, a periodic cell and a force are; why energies are compared per atom; and what MAE and RMSE mean.",
         "- **Executable serialization handled explicitly:** the pinned `.model` file is a pickle. It is digest-verified, statically audited against allow-lists (the audit digest is pinned) and unpickled **once** to produce the safetensors pair the model is actually loaded from. No Hub-hosted Python module is imported; `mace-torch` is installed from PyPI at a pinned version.",
-        "- **Data contract:** structures are `{{symbols, positions, cell, pbc}}` in Å with optional `energy` (eV) and `forces` (eV/Å); elements limited to the 89 MACE-MP-0 supports (Z 1–83, 89–94); 1..512 atoms per structure, at most 32 structures and 4,096 atoms per call; no two atoms closer than 0.5 Å (periodic images included); cell vectors under 200 Å and periodic cell heights of at least 1 Å; a dataset needs at least 8 labelled structures with unique names. BYOD accepts extended XYZ.",
+        "- **Data contract:** structures are `{symbols, positions, cell, pbc}` in Å with optional `energy` (eV) and `forces` (eV/Å); elements limited to the 89 MACE-MP-0 supports (Z 1–83, 89–94); 1..512 atoms per structure, at most 32 structures and 4,096 atoms per call; no two atoms closer than 0.5 Å (periodic images included); cell vectors under 200 Å and periodic cell heights of at least 1 Å; a dataset needs at least 8 labelled structures with unique names. BYOD accepts extended XYZ.",
         "- **Validation is structural, not chemical:** nothing checks that a structure is charge-neutral, near equilibrium or physically meaningful — a random cloud of supported atoms is scored without complaint, and EMT labels are only meaningful for the metals it parameterises.",
         "- **Privacy:** Do not upload confidential or restricted data to a hosted runtime unless you are authorized to process it there — proprietary alloy compositions or unpublished DFT datasets are exactly that. The default path uploads nothing.",
     ],
@@ -137,25 +161,54 @@ TEMPLATE = {
                 "Look for: 48 structures, three compositions of 16, 1,536 atoms, splits 27/9/12, EMT energies of a few tenths "
                 "of an eV per atom, and a written `outputs/{stem}_sample_dataset.xyz` in the extended-XYZ shape BYOD expects. "
                 "Four refusal probes follow — an unsupported element, overlapping atoms, periodicity without a cell, and a "
-                "malformed force array — each rejected before `torch` does anything."
+                "malformed force array — each rejected before `torch` does anything. For BYOD, set `BYOD_PATH` to your "
+                "`.xyz`/`.extxyz` file on Kaggle or Jupyter, or leave it empty on Colab for the upload dialog; a missing file, "
+                "a cancelled upload and an unreadable frame are refused with a message naming the file.\n\n"
+                "**Predict:** the split cuts 20 % validation and 25 % test *within each composition*. What would go wrong if one composition landed only in the test split?\n\n"
+                "<details><summary>Check your reasoning</summary>\n\n"
+                "The per-element reference energies calibrated in Section 7 would never have seen that composition's elements "
+                "in that ratio, so the test error would measure an extrapolation, not the adaptation. The recorded run split "
+                "48 structures into 27 / 9 / 12 with every composition in every split, and rejected all four probes.\n\n"
+                "</details>"
             ),
             "code": (
                 "import json\n"
                 "import os\n"
                 "from pathlib import Path\n\n"
                 "USE_BYOD = False  # @param {{type:\"boolean\"}}\n"
+                "# Kaggle / Jupyter: the path of one extended-XYZ file (.xyz / .extxyz). Empty: the Colab upload dialog.\n"
+                "BYOD_PATH = ''  # @param {{type:\"string\"}}\n"
                 "VAL_FRACTION = 0.2  # @param {{type:\"number\"}}\n"
                 "TEST_FRACTION = 0.25  # @param {{type:\"number\"}}\n"
                 "SEED = 42  # @param {{type:\"integer\"}}\n\n"
+                "\n"
+                "def byod_file(path_text):\n"
+                "    \"\"\"The BYOD dataset file: BYOD_PATH, or exactly one Colab upload; each refusal says what to do.\"\"\"\n"
+                "    if path_text.strip():\n"
+                "        path = Path(path_text.strip()).expanduser()\n"
+                "        if not path.is_file():\n"
+                "            raise FileNotFoundError(f'BYOD_PATH {{str(path)!r}} is not a file: give one extended-XYZ (.xyz / .extxyz) file of labelled structures')\n"
+                "        return path\n"
+                "    try:\n"
+                "        from google.colab import files\n"
+                "    except ImportError:\n"
+                "        raise RuntimeError('USE_BYOD = True but BYOD_PATH is empty and this runtime has no Colab upload dialog: set BYOD_PATH to one .xyz / .extxyz file') from None\n"
+                "    uploaded = files.upload() or {{}}\n"
+                "    if len(uploaded) != 1:\n"
+                "        raise RuntimeError(f'expected exactly one uploaded .xyz / .extxyz file, got {{len(uploaded)}} ({{sorted(uploaded) or \"upload cancelled or empty\"}}): run this cell again, or set BYOD_PATH')\n"
+                "    file_name, payload = next(iter(uploaded.items()))\n"
+                "    path = Path('work') / Path(file_name).name\n"
+                "    path.parent.mkdir(parents=True, exist_ok=True)\n"
+                "    path.write_bytes(payload)\n"
+                "    return path\n\n\n"
                 "os.makedirs('outputs', exist_ok=True)\n"
                 "if USE_BYOD:\n"
-                "    from google.colab import files\n"
-                "    uploaded = files.upload()\n"
-                "    file_name, payload = next(iter(uploaded.items()))\n"
-                "    byod_path = Path('work') / file_name\n"
-                "    byod_path.parent.mkdir(parents=True, exist_ok=True)\n"
-                "    byod_path.write_bytes(payload)\n"
-                "    records = load_byod_dataset(byod_path)\n"
+                "    byod_path = byod_file(BYOD_PATH)\n"
+                "    file_name = byod_path.name\n"
+                "    try:\n"
+                "        records = load_byod_dataset(byod_path)\n"
+                "    except (OSError, ValueError, KeyError, IndexError) as exc:\n"
+                "        raise ValueError(f'{{file_name}}: not a readable labelled extended-XYZ dataset ({{type(exc).__name__}}: {{exc}})') from None\n"
                 "    data_source = 'BYOD (' + file_name + ')'\n"
                 "else:\n"
                 "    records = generate_sample_dataset(seed=SEED)\n"
@@ -196,7 +249,14 @@ TEMPLATE = {
                 "equals the central finite difference of the energy along that coordinate, to ~1e-8 eV/Å — the forces are the "
                 "analytic gradient, not a separate head. **Extensivity:** a 2×1×1 supercell has twice the energy. Look for "
                 "differences at the 1e-13 level for the symmetry checks and 1e-8 for the finite difference; a rebuilt model with "
-                "a wrong config would fail these before any accuracy number."
+                "a wrong config would fail these before any accuracy number. These five checks stay hard stops: they test that "
+                "the rebuilt model is the model, not how accurate it is.\n\n"
+                "**Predict:** rotate the whole cell by a random rotation. By how much will the energy change?\n\n"
+                "<details><summary>Check your reasoning</summary>\n\n"
+                "By nothing but floating-point noise: the recorded pre-flight measured differences of 0 to about 3e-14 for "
+                "rotation, translation and permutation, and 2e-8 eV/Å between the analytic force and the finite difference. "
+                "MACE is built equivariant, so this is a property of the architecture, not something it learned.\n\n"
+                "</details>"
             ),
             "code": (
                 "import time\n\n"
@@ -256,9 +316,28 @@ TEMPLATE = {
                 "evaluated as is: expect a force MAE well below the zero baseline — MACE-MP-0 already knows how metals push on "
                 "each other — but an energy error of several eV per atom, because PBE total energies and EMT energies sit on "
                 "different absolute references. That offset is the first thing adaptation removes.\n\n"
-                "Energies are per atom (eV/atom); forces are per Cartesian component (eV/Å)."
+                "Energies are per atom (eV/atom); forces are per Cartesian component (eV/Å). The cell records a verdict — "
+                "whether the frozen model's force error is below the zero-force baseline — instead of stopping, so a BYOD run "
+                "where it is not still reaches the export. If you re-run this cell after Section 7, it first reloads the frozen "
+                "model from the verified snapshot and says so.\n\n"
+                "**Predict:** will the frozen model beat the composition baseline on energy? On forces?\n\n"
+                "**What to notice:** energy and force tell opposite stories here.\n\n"
+                "<details><summary>Check your reasoning</summary>\n\n"
+                "Recorded Kaggle T4 run: on energy the frozen model is far *worse* — 3.981 eV/atom against the composition "
+                "baseline's 0.09291 — because PBE and EMT energies sit on different absolute references; on forces it is far "
+                "better — 0.2079 eV/Å against the zero-force baseline's 0.7376. The energy offset is a reference problem, not "
+                "a physics problem, and Section 7's calibration removes it.\n\n"
+                "</details>"
             ),
             "code": (
+                "def frozen_pipeline():\n"
+                "    \"\"\"The model scored here and trained in Section 7 must be the frozen base: a re-run after Section 7 reloads it.\"\"\"\n"
+                "    global pipe\n"
+                "    if pipe.adapter is not None:\n"
+                "        pipe = MaceMaterialsPipeline.from_pretrained(weights_dir=WEIGHTS_DIR, device=('cuda' if torch.cuda.is_available() else 'cpu'), report=print)\n"
+                "        print('Reloaded the frozen foundation model from the verified snapshot: the loaded pipeline carried an adaptation from an earlier run.')\n"
+                "    return pipe\n\n\n"
+                "frozen_pipeline()\n"
                 "baseline_composition = composition_baseline(train_records, test_records)\n"
                 "baseline_zero_force = zero_force_baseline(test_records)\n"
                 "t0 = time.perf_counter()\n"
@@ -267,7 +346,8 @@ TEMPLATE = {
                 "print({{'composition_baseline': {{'energy_mae_per_atom': round(baseline_composition['energy_mae_per_atom'], 4), 'force_mae': round(baseline_composition['force_mae'], 4), 'e0_eV': {{k: round(v, 4) for k, v in baseline_composition['e0_ev'].items()}}}}}})\n"
                 "print({{'zero_force_baseline': {{'force_mae': round(baseline_zero_force['force_mae'], 4), 'force_rmse': round(baseline_zero_force['force_rmse'], 4)}}}})\n"
                 "print({{'frozen_foundation_model': {{k: round(v, 4) for k, v in zero_shot_test.items() if isinstance(v, float)}}, 'seconds': zero_shot_seconds}})\n"
-                "assert zero_shot_test['force_mae'] < baseline_zero_force['force_mae']"
+                "frozen_verdict = 'force MAE below the zero-force baseline' if zero_shot_test['force_mae'] < baseline_zero_force['force_mae'] else 'force MAE not below the zero-force baseline'\n"
+                "print({{'frozen_vs_zero_force_baseline': frozen_verdict}})"
             ),
         },
         {
@@ -284,7 +364,15 @@ TEMPLATE = {
                 "Watch the validation energy MAE fall from ~0.1 eV/atom (the calibrated frozen model) to below 0.01 and the force "
                 "MAE roughly halve over eight epochs, about a minute on CPU. The counter-examples are worth running once: "
                 "`TRAINABLE_BLOCKS = 0` (readouts only, 2,192 parameters) fixes energies slowly and barely moves forces; "
-                "`TRAINABLE_BLOCKS = 2` trains everything and is slower without being better on this small set."
+                "`TRAINABLE_BLOCKS = 2` trains everything and is slower without being better on this small set. Re-running this "
+                "cell trains from the frozen model again (it reloads it first if the pipeline already carries an adaptation), so "
+                "epoch 0 is always the calibrated frozen model.\n\n"
+                "**Predict:** the calibration fits one energy offset per element. Roughly how large will the two offsets be, and why?\n\n"
+                "<details><summary>Check your reasoning</summary>\n\n"
+                "A few eV each — the recorded pre-flight fitted Al +3.768 eV and Cu +4.176 eV — because that is the gap between "
+                "the PBE and EMT reference energies the frozen model's 3.98 eV/atom error came from. Two numbers remove almost "
+                "all of the energy error; the training then works on the remaining shape of the energy surface and the forces.\n\n"
+                "</details>"
             ),
             "code": (
                 "EPOCHS = 8  # @param {{type:\"integer\"}}\n"
@@ -299,6 +387,7 @@ TEMPLATE = {
                 "    if 'note' in entry:\n"
                 "        row['note'] = entry['note']\n"
                 "    print(row)\n\n"
+                "frozen_pipeline()  # a re-run trains from the frozen model, never on top of the previous adaptation\n"
                 "t0 = time.perf_counter()\n"
                 "adapt_result = pipe.adapt(train_records, val_records, epochs=EPOCHS, lr=LEARNING_RATE, batch_size=BATCH_SIZE, trainable_blocks=TRAINABLE_BLOCKS, progress=report)\n"
                 "adapt_seconds = round(time.perf_counter() - t0, 1)\n"
@@ -314,7 +403,15 @@ TEMPLATE = {
                 "against the composition baseline (what a model that cannot see geometry achieves), the zero-force baseline and "
                 "the frozen foundation model from Section 6. Look for an energy MAE an order of magnitude below the composition "
                 "baseline and a force MAE well below the frozen model's. Twelve test structures from one seeded split give no "
-                "dispersion estimate — the deltas are sample-sanity evidence that the adaptation contract works, not a benchmark."
+                "dispersion estimate — the deltas are sample-sanity evidence that the adaptation contract works, not a benchmark. "
+                "The cell records two verdicts — adapted energy MAE against the composition baseline, adapted force MAE against "
+                "the frozen model — instead of stopping, so a BYOD run without a gain still exports.\n\n"
+                "**Predict:** after adaptation, will the energy MAE be closer to 0.1 or to 0.01 eV/atom?\n\n"
+                "<details><summary>Check your reasoning</summary>\n\n"
+                "Below 0.01: the recorded run reached 0.00725 eV/atom (composition baseline 0.09291) and a force MAE of "
+                "0.07803 eV/Å (frozen 0.2079), both verdicts `improved`. On twelve structures labelled by a classical "
+                "potential, this shows the adaptation contract works; it says nothing about DFT accuracy.\n\n"
+                "</details>"
             ),
             "code": (
                 "test_metrics = pipe.evaluate(test_records)\n"
@@ -324,6 +421,9 @@ TEMPLATE = {
                 "    'energy_mae_per_atom': {{'composition_baseline': round(baseline_composition['energy_mae_per_atom'], 5), 'frozen_model': round(zero_shot_test['energy_mae_per_atom'], 5), 'adapted': round(test_metrics['energy_mae_per_atom'], 5)}},\n"
                 "    'force_mae': {{'zero_force_baseline': round(baseline_zero_force['force_mae'], 5), 'frozen_model': round(zero_shot_test['force_mae'], 5), 'adapted': round(test_metrics['force_mae'], 5)}},\n"
                 "}}\n"
+                "energy_verdict = 'improved' if test_metrics['energy_mae_per_atom'] < baseline_composition['energy_mae_per_atom'] else 'not below the composition baseline'\n"
+                "force_verdict = 'improved' if test_metrics['force_mae'] < zero_shot_test['force_mae'] else 'not below the frozen model'\n"
+                "comparison['verdicts'] = {{'frozen_vs_zero_force_baseline': frozen_verdict, 'adapted_energy_vs_composition_baseline': energy_verdict, 'adapted_force_vs_frozen_model': force_verdict}}\n"
                 "for metric, values in comparison.items():\n"
                 "    print({{metric: values}})\n"
                 "evaluation_report = {{\n"
@@ -342,8 +442,7 @@ TEMPLATE = {
                 "}}\n"
                 "with open('outputs/{stem}_evaluation_report.json', 'w', encoding='utf-8') as f:\n"
                 "    json.dump(evaluation_report, f, indent=2)\n"
-                "assert test_metrics['energy_mae_per_atom'] < baseline_composition['energy_mae_per_atom']\n"
-                "assert test_metrics['force_mae'] < zero_shot_test['force_mae']\n"
+
                 "print({{'report': 'outputs/{stem}_evaluation_report.json'}})"
             ),
         },
@@ -359,7 +458,12 @@ TEMPLATE = {
                 "and SHA-256, the training configuration and the epoch history (OUT8). `MaceMaterialsPipeline.from_artifact` "
                 "re-verifies the base snapshot, checks the artifact manifest and digest **before** deserialising, and overlays "
                 "the tensors onto a freshly rebuilt base — a new object from files, not the in-memory model (VER2). The cell "
-                "asserts identical energies and forces (VER4)."
+                "asserts identical energies and forces (VER4).\n\n"
+                "<details><summary>Check your reasoning</summary>\n\n"
+                "Why reload from files instead of trusting the in-memory model? Because the artifact is what you ship: the "
+                "recorded run's reloaded adapter matched the in-memory model to 1.4e-14 eV in energy and 7.8e-15 eV/Å in force "
+                "— floating-point noise. A real mismatch stops the notebook; it is a contract failure, not a quality result.\n\n"
+                "</details>"
             ),
             "code": (
                 "import random\n"
@@ -457,10 +561,43 @@ TEMPLATE = {
         "frozen model on an independent split, and emit the shown machine-readable artifacts — without the repository being "
         "reachable. It does **not** establish benchmark superiority, production fitness, or physical validity beyond the checks "
         "shown.\n\n"
-        "**Optional experiments (they do not affect the default path):** set `TRAINABLE_BLOCKS = 0` to train the readouts alone "
+        "## Change one thing (next experiments)\n\n"
+        "These do not affect the default path; re-run from Section 6 after any change (the cells restart from the frozen model). "
+        "Set `TRAINABLE_BLOCKS = 0` to train the readouts alone "
         "and watch the forces stay put; set `TRAINABLE_BLOCKS = 2` to fine-tune everything and compare the time; raise "
         "`EPOCHS`; or bring your own extended-XYZ dataset through BYOD and read the composition baseline before the adapted "
         "number.\n\n"
+        "## Troubleshooting\n\n"
+        "Section 1 stops with `This notebook needs a Linux x86_64 runtime`: use Google Colab, Kaggle or a Linux Jupyter host. "
+        "`The pinned uv wheel failed its size/SHA-256 check`: run Section 1 again; if it repeats, the download is being "
+        "altered. `The isolated environment's Python process exited`: the worker crashed, usually out of memory — restart the "
+        "session and choose **Run all**. A size, SHA-256 or audit error in Section 3: the staged `.model` file or its "
+        "conversion differs from the pins — delete `weights/{MODEL_KEY}/` (keeping the manifest is not needed; the cell "
+        "rewrites it) and re-run Section 3; never bypass the audit. A physics-check failure in Section 5: the rebuilt model "
+        "does not match its configuration — re-run Section 3 from a clean `weights/` folder. With `USE_BYOD = True`: "
+        "`BYOD_PATH … is not a file`, `expected exactly one uploaded … file` or `… no Colab upload dialog` — fix the path or "
+        "the upload; `… not a readable labelled extended-XYZ dataset` or a `ValueError` from `validate_dataset` naming a "
+        "structure — fix that frame (the Data contract in the Prerequisites lists every rule). A verdict that is not "
+        "`improved` is a result to record, not an error. A reload-parity failure in Section 9: delete "
+        "`outputs/{stem}_adapter` and re-run Section 9.\n\n"
+        "## Glossary\n\n"
+        "- **Interatomic potential:** a function from atom positions to energy; forces are minus its gradient.\n"
+        "- **Foundation potential:** a potential trained on a broad database (here Materials Project PBE) and meant to be adapted.\n"
+        "- **Equivariance:** rotating the input rotates the forces the same way and leaves the energy unchanged; MACE has it by construction.\n"
+        "- **Extensivity:** twice the material has twice the energy; checked with a 2×1×1 supercell.\n"
+        "- **Level of theory:** how the labels were computed (PBE DFT for the foundation model, the EMT classical potential here); different levels have different absolute energies.\n"
+        "- **Per-element reference energy (E0):** one energy per element added to every atom; calibrating it moves the model to a new level of theory.\n"
+        "- **MAE:** mean absolute error — per atom for energy (eV/atom), per Cartesian component for forces (eV/Å).\n"
+        "- **Composition baseline:** one fitted energy per element and zero forces; it cannot see geometry, so it sets the floor.\n"
+        "- **Bounded fine-tuning:** training only the readouts, reference energies and the last interaction block; the rest stays frozen.\n"
+        "- **Verdict:** a recorded outcome instead of an assertion, so a negative result still exports.\n"
+        "- **Isolated environment:** the separate hash-locked Python environment built in Section 1; every later cell runs there.\n\n"
+        "## Conclusion (your notes)\n\n"
+        "1. In two sentences: why was the frozen model's energy so wrong and its forces so good, and what fixed the energy?\n"
+        "2. Which of the five physics checks would catch a model rebuilt with the wrong configuration, and why?\n"
+        "3. Which of your predictions were wrong, and what did the output show instead?\n"
+        "4. What would you need before trusting an adapted potential in a molecular-dynamics run of your own material?\n\n"
+        "**Your notes:**\n\n"
         "## References\n\n"
         "- Repository README: https://github.com/kurtvalcorza/mace-materials-pipeline/blob/main/README.md\n"
         "- Repository model card: https://github.com/kurtvalcorza/mace-materials-pipeline/blob/main/MODEL_CARD.md\n"

@@ -68,8 +68,10 @@ CODE_MARKERS = (
     # Stage 8: held-out evaluation and comparison
     "test_metrics = pipe.evaluate(test_records)",
     "val_metrics = pipe.evaluate(val_records)",
-    "assert test_metrics['energy_mae_per_atom'] < baseline_composition['energy_mae_per_atom']",
-    "assert test_metrics['force_mae'] < zero_shot_test['force_mae']",
+    "energy_verdict = 'improved' if test_metrics['energy_mae_per_atom'] < baseline_composition['energy_mae_per_atom'] else 'not below the composition baseline'",
+    "force_verdict = 'improved' if test_metrics['force_mae'] < zero_shot_test['force_mae'] else 'not below the frozen model'",
+    "BYOD_PATH = ''",
+    "global pipe\n    if pipe.adapter is not None:\n        pipe = MaceMaterialsPipeline.from_pretrained(",
     # Stage 9: inference on new structures, artifact export, reload parity
     "new_prediction = pipe.predict(new_records)",
     "pipe.save_artifact(artifact_dir, metadata=",
@@ -159,9 +161,11 @@ COMMON_CODE_MARKERS = (
     "PINS = [",
     "NOTEBOOK_SOURCE = {",
     "SKIP_INSTALL = os.environ.get('DIMER_NOTEBOOK_CI_PREINSTALLED') == '1'",
-    "subprocess.run([sys.executable, '-m', 'pip', 'install', '-q', *PINS], check=True)",
-    "importlib.metadata.packages_distributions()",
-    "importlib.invalidate_caches()",
+    "'--require-hashes', '--only-binary', ':all:'",
+    "'--managed-python'",
+    "if len(wheel) != UV_BYTES or hashlib.sha256(wheel).hexdigest() != UV_SHA256:",
+    "if hashlib.sha256(LOCK_TEXT.encode('utf-8')).hexdigest() != LOCK_SHA256:",
+    "_ip.input_transformers_cleanup.append(_route_to_isolated_runtime)",
     "platform.python_version()",
     "torch.__version__",
     "MANIFEST = {",
@@ -595,17 +599,14 @@ def _validate_parity(path: Path, notebook: dict, code_cells: list[tuple[int, str
 
 
 def _validate_bootstrap_guard(path: Path, code_cells: list[tuple[int, str, ast.Module]]) -> None:
-    """The stale-import guard must actually raise: `if stale:` whose body raises RuntimeError."""
-    raises = False
-    for _, _, tree in code_cells:
-        for node in ast.walk(tree):
-            if isinstance(node, ast.If) and isinstance(node.test, ast.Name) and node.test.id == "stale":
-                for sub in ast.walk(node):
-                    if isinstance(sub, ast.Raise) and isinstance(sub.exc, ast.Call):
-                        func = sub.exc.func
-                        if isinstance(func, ast.Name) and func.id == "RuntimeError":
-                            raises = True
-    _check(raises, f"{path.name}: install cell must raise RuntimeError when already-imported packages change")
+    """RUN1/RUN10/ENV6 (fleet sweep SWP-R): nothing is pip-installed into the kernel and no cell asks for a restart.
+    Exactly one cell runs in the kernel (the isolated-environment bootstrap); it reuses a matching environment."""
+    kernel = [source for _, source, _ in code_cells if "# dimer: kernel cell" in source]
+    _check(len(kernel) == 1, f"{path.name}: exactly one '# dimer: kernel cell' bootstrap cell is required, found {len(kernel)}")
+    code = "\n".join(source for _, source, _ in code_cells)
+    _check("'-m', 'pip', 'install'" not in code and "pip install" not in code, f"{path.name}: no cell may pip-install into the notebook kernel (RUN10)")
+    _check("Restart the runtime" not in code, f"{path.name}: no cell may ask for a runtime restart (RUN1)")
+    _check("_isolated_environment_ready()" in kernel[0], f"{path.name}: the bootstrap cell must reuse a matching isolated environment")
 
 
 UNSAFE_LOAD = re.compile(r"\btorch\.load\s*\((?![^)]*weights_only\s*=\s*True)|weights_only\s*=\s*False")
@@ -640,7 +641,10 @@ def _validate_notebook_content(
     model_id, _revision = _package_identity()
     stripped = _mask_audited_conversion(path, code_cells, embedded)
     code = "\n".join(stripped.values())
-    outside = "\n".join(text for index, text in stripped.items() if index not in embedded)
+    # The isolated-runtime bootstrap (the one '# dimer: kernel cell', checked by _validate_bootstrap_guard) downloads
+    # the pinned uv wheel and runs uv; it is infrastructure, not model logic, so G2 does not apply to it.
+    kernel = {index for index, source, _ in code_cells if "# dimer: kernel cell" in source}
+    outside = "\n".join(text for index, text in stripped.items() if index not in embedded and index not in kernel)
     _check(UNSAFE_LOAD.search(code) is None, f"{path.name}: unsafe deserialization outside {AUDITED_CONVERSION_FUNCTION}")
     _check(f"{AUDITED_CONVERSION_FUNCTION}(" not in outside, f"{path.name}: {AUDITED_CONVERSION_FUNCTION} must not be called outside the carried module cells")
     missing = [marker for marker in COMMON_CODE_MARKERS + CODE_MARKERS if marker not in code]
