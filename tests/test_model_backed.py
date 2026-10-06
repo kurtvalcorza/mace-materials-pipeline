@@ -160,6 +160,7 @@ def test_adapt_is_transactional_when_the_progress_callback_raises(pipe, structur
         record["energy"], record["forces"] = _emt_energy_forces(to_atoms(record))
         record["name"] = f"tx-{i}"
         records.append(record)
+    pipe.reset_to_pretrained()  # the module-scoped pipe was adapted by an earlier test; adapt() refuses that (MMC-M2)
     before = {k: v.detach().clone() for k, v in pipe.model.state_dict().items()}
     energies_before = pipe.model.atomic_energies_fn.atomic_energies.detach().clone()
 

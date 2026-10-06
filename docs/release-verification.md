@@ -3,7 +3,7 @@
 `tutorials/mace_materials_colab.ipynb` (`E2E`, **standalone** carrier) is a **release candidate** until the exact
 notebook revision has executed top-to-bottom in a clean supported runtime. Unit tests, JSON validation, code-cell
 compilation, the generator parity checks and `tools/validate_release_assets.py` are necessary checks but are **not**
-runtime evidence under DIMER Notebook Specification 2.0 (REL8). This file is the durable release-gate record.
+runtime evidence under DIMER Notebook Specification 2.2 (REL8). This file is the durable release-gate record.
 
 ## Automatic coverage (static, every pull request)
 
@@ -12,14 +12,17 @@ CI runs `tools/validate_release_assets.py`, which checks:
 - notebook JSON parses; every code cell compiles as plain Python (no `%`/`!` magics); no persisted outputs or
   execution counts; no unresolved placeholder markers; every code cell is preceded by an explanatory markdown cell;
 - exactly one tutorial notebook, named in `tutorials/README.md` with its `E2E` profile, the notebook-spec version
-  and the standalone carrier; `metadata.dimer` declares that profile, spec `2.0`, a §3.3 pedagogical mode,
+  and the standalone carrier; `metadata.dimer` declares that profile, spec `2.2`, a §3.3 pedagogical mode,
   `standalone: true` and `generated_from` (repository, revision, module SHA-256, generator);
 - the standalone carrier (ST1–ST8, PAR1–PAR4): no clone, repository install or repository import on the primary
   path; one cell per carried module (`pipeline.py`, `samples.py`, `metrics.py`), each equal to its source after the
   generator's documented rewrites; the inline `MANIFEST` equal to the committed snapshot manifest and the inline
   `PINS` equal to the `pyproject.toml` runtime pins; the notebook byte-identical (on LF) to
-  `tools/build_notebook.py` output for its recorded revision; the pinned-install cell with its
-  restart-on-stale-import guard; `NOTEBOOK_SOURCE` recorded in exports;
+  `tools/build_notebook.py` output for its recorded revision; exactly two kernel cells — the isolated uv install
+  (pinned `uv` wheel checked by size and SHA-256, managed CPython 3.12.12, the carried hash lock installed with
+  `--require-hashes --only-binary :all: --no-deps`) and the router that sends every later cell to that environment;
+  `NOTEBOOK_SOURCE` recorded in exports; the guided layer (who it is for, Input → Model → Output, roadmap, predictions,
+  worked answers, the Section 10 activity, troubleshooting, glossary) and no stale restart or install text;
 - `MODEL_ID`/`MODEL_REVISION` bound only in the carried module cell (and repeated in the inline manifest, which the
   notebook asserts against the module before fetching), the revision a 40-hex immutable commit, and the same
   identity string in `README.md`, `MODEL_CARD.md` and `docs/WEIGHTS.md` with no stray revisions;
@@ -72,10 +75,11 @@ Before changing the registry status from `Candidate` to `Release-grade`:
 4. verify that Section 1 reports `NOTEBOOK_SOURCE.repository_revision` equal to the revision recorded in
    `metadata.dimer.generated_from` and that the installed core package versions equal the inline `PINS`
    (= `pyproject.toml`): `torch==2.14.0`, `torchvision==0.29.0`, `mace-torch==0.3.16`, `e3nn==0.4.4`, `ase==3.29.0`, `numpy==2.5.3`,
-   `safetensors==0.8.0`, `huggingface-hub==1.32.0` (an interpreter restart after the install is expected where
-   the runtime's preinstalled torch differs from the pin);
+   `safetensors==0.8.0`, `huggingface-hub==1.32.0`, installed by the isolated-environment cell from the carried hash
+   lock (`tutorials/requirements-colab.lock.txt`, 73 packages) into managed CPython 3.12.12, with **no restart** and
+   no error output anywhere in the run (record "1 pass, 0 restarts");
 5. verify every default-path stage completes:
-   - pinned runtime installed from the inline `PINS` with no GitHub access;
+   - the isolated environment built from the carried lock with no GitHub access, and every later cell routed to it;
    - the three carried module cells execute (defining `MaceMaterialsPipeline`, `audit_model_file`,
      `convert_model`, `build_model`, `verify_snapshot`, `verify_converted`, `stage_missing_files`,
      `validate_inputs`, `to_atoms`, `from_atoms`, `generate_sample_dataset`, `build_sample_structure`,
@@ -121,7 +125,8 @@ A known-failing default path in the supported runtime blocks release (REL11).
 
 | Notebook | Commit / notebook blob | Date (UTC) | Executor | Outcome |
 |---|---|---|---|---|
-| `mace_materials_colab.ipynb` (`E2E`) | `cc91bbd` / `1044b4aa` | 2026-09-19 | Kaggle Tesla T4 (`kurtvalcorza/dimer-nb2-mace-materials` v3; image `torch 2.10.0+cu128` before the pinned install, `torch 2.14.0+cu130` after, Python 3.12.13, `cuda:0`) | **PASSED** — 11/11 code cells ok (1 restart after install cell); 9 files, 135 MB staged from the Hub into a clean cache (the `.model` source fetched and converted in the notebook); comparison {energy_mae_per_atom: {composition_baseline: 0.09291, frozen_model: 3.981, adapted: 0.00725}, force_mae: {zero_force_baseline: 0.7376, frozen_model: 0.2079, adapted: 0.07803}}; reload parity {max_abs_energy_diff: 1.421e-14, max_abs_force_diff: 7.772e-15}; run summary and executed notebook archived under `.agent/backups/kaggle-e2e-2026-09-19/out/dimer-nb2-mace-materials/v3/evidence/` in the workspace |
+| `mace_materials_colab.ipynb` (`E2E`) | `cc91bbd` / `1044b4aa` | 2026-09-19 | Kaggle Tesla T4 (`kurtvalcorza/dimer-nb2-mace-materials` v3; image `torch 2.10.0+cu128` before the pinned install, `torch 2.14.0+cu130` after, Python 3.12.13, `cuda:0`) | **Completed only after a manual restart; not one-pass evidence** — completed only after a manual restart — pass 1 stopped in the install cell at its restart guard (`cuda-bindings` 12.9.4 → 13.4.2, `numpy` 2.0.2 → 2.5.3), pass 2 after an executor restart ran 11/11 code cells ok; 9 files, 135 MB staged from the Hub into a clean cache (the `.model` source fetched and converted in the notebook); comparison {energy_mae_per_atom: {composition_baseline: 0.09291, frozen_model: 3.981, adapted: 0.00725}, force_mae: {zero_force_baseline: 0.7376, frozen_model: 0.2079, adapted: 0.07803}}; reload parity {max_abs_energy_diff: 1.421e-14, max_abs_force_diff: 7.772e-15}; run summary and executed notebook archived under `.agent/backups/kaggle-e2e-2026-09-19/out/dimer-nb2-mace-materials/v3/evidence/` in the workspace |
+| `mace_materials_colab.ipynb` | review-fix head of PR #9 / `6df363ea` | 2026-10-05 | Local pre-flight harness (Windows, CPython 3.12, CPU float64, `torch 2.14.0+cpu`, the notebook's pins in a private venv **without `python-hostlist`**, `DIMER_NOTEBOOK_CI_PREINSTALLED=1` so the isolated-environment cells were skipped) | PASS — pre-flight only, **not** promotion evidence; the isolated uv install itself was only dry-run resolved for manylinux x86_64 |
 | `mace_materials_colab.ipynb` | `9afc026` / `1b9359b3` | 2026-09-18 | Local pre-flight harness (Windows, CPython 3.12.10, CPU, `google.colab` shim, pins pre-installed) | PASS — pre-flight only, **not** promotion evidence |
 
 ## Recorded executions
@@ -133,9 +138,31 @@ runtime, not general estimates.
 
 | Date (UTC) | Commit / notebook blob | Executor | Path exercised | Wall | Outcome |
 |---|---|---|---|---|---|
-| 2026-09-19 | `cc91bbd` / `1044b4aa` | Kaggle Tesla T4 (`kurtvalcorza/dimer-nb2-mace-materials` v3; image `torch 2.10.0+cu128` before the pinned install, `torch 2.14.0+cu130` after, Python 3.12.13, `cuda:0`) | Default sample path, `Run all` from a fresh interpreter with an empty Hugging Face cache and no repository checkout (blob SHA-1 verified against GitHub before execution) | 243.3 s | **PASSED** — 11/11 code cells ok (1 restart after install cell); 9 files, 135 MB staged from the Hub into a clean cache (the `.model` source fetched and converted in the notebook); comparison {energy_mae_per_atom: {composition_baseline: 0.09291, frozen_model: 3.981, adapted: 0.00725}, force_mae: {zero_force_baseline: 0.7376, frozen_model: 0.2079, adapted: 0.07803}}; reload parity {max_abs_energy_diff: 1.421e-14, max_abs_force_diff: 7.772e-15}; run summary and executed notebook archived under `.agent/backups/kaggle-e2e-2026-09-19/out/dimer-nb2-mace-materials/v3/evidence/` in the workspace |
+| 2026-10-06 | `888fe9e` / `6df363ea` | Colab CLI 0.7.4 sequential execution, fresh Colab VM, Tesla T4 (`colab exec -f`: every code cell in order in one kernel; not a browser Run all, no execution counts, order from `exec.log` "Executing cell k/14"); isolated uv environment CPython 3.12.12 built from the 73-package carried lock installed `--no-deps` **without `python-hostlist`** (kernel Python 3.13.15); `torch 2.14.0+cu130`, `mace-torch 0.3.16`, `e3nn 0.4.4`, `ase 3.29.0`, CUDA available | Default path with every form parameter at its default, including the Section 10 activity (`ACTIVITY_TRAINABLE_BLOCKS = 0`); fresh VM with an empty Hugging Face cache, no pre-staged weights and no repository checkout (blob SHA-1 verified against GitHub before the VM was allocated); `repository_revision` `4101558` equals `metadata.dimer.generated_from` | 186.7 s (CLI wall clock, including the 61 s isolated-environment setup and the Hub download) | **1 pass, 0 restarts, 0 error outputs** — 14/14 code cells (cells 4–6, the carried modules, print nothing by design); `stage_missing_files` fetched 2 of 2 entries, `verify_snapshot` verified 2; pickle audit 0 violations, digest `9bb150f1…`; conversion config `130b6411…` / safetensors `2ed99065…`, 3 dropped keys, 6 added flags; 48 records, splits 27 / 9 / 12, four refusals; physics checks rotation 2.8×10⁻¹⁴ / 1.8×10⁻¹⁴, translation 0.0, permutation 1.4×10⁻¹⁴ / 5.1×10⁻¹⁵, finite difference 2.0×10⁻⁸, extensivity 0.0, batch-versus-single 0.0; baselines composition 0.0929 eV/atom, zero-force 0.7376 eV/Å, frozen 3.9807 / 0.2079; adaptation epoch 0 0.0985 / 0.1967, calibration Al +3.768 / Cu +4.176 eV, 1,919,128 of 8,221,984 parameters, kept epoch 8 (val 0.0076 / 0.0762), 25.6 s; test (n = 12) adapted **0.00725 eV/atom / 0.07803 eV/Å** (RMSE 0.00953 / 0.12403), equal to the 2026-09-19 Kaggle and 2026-10-05 pre-flight numbers; new structures 0.0087 / 0.0443; adapter 39 tensors, 16,155,811 B; reload parity 1.4×10⁻¹⁴ / 9.3×10⁻¹⁵ (GPU summation order; the CPU pre-flight printed 0.0); Section 10 readouts-only (2,192 parameters) test 0.0904 / 0.2075, epoch-0 difference 9.9×10⁻¹⁶, parity 1.4×10⁻¹⁴ / 5.9×10⁻¹⁵. Evidence in `docs/verification/2026-10-06-colab-t4/` |
+| 2026-10-05 | review-fix head of PR #9 / `6df363ea` | Local pre-flight harness (Windows, CPython 3.12, CPU float64, `torch 2.14.0+cpu`, `mace-torch 0.3.16` without `python-hostlist`; the `.model` source pre-staged, the notebook wrote the manifest, verified, audited and converted it) | Default path (Sections 3–10, including the Section 10 activity), then the documented experiment `TRAINABLE_BLOCKS = 0` with Sections 7–9 re-run; separately a BYOD re-run of the sample XYZ after a default run, and the BYOD contract probes (grouped trajectories, one structure per composition, 4 compositions × 2 end to end, 201 structures through Sections 4, 6 and 7, missing path, no Colab, unlabelled frames) | 187.6 s (journey A) | **PASS, pre-flight only** — splits 27/9/12; test comparison {composition 0.09291, frozen 3.98075, adapted 0.00725 eV/atom; zero-force 0.7376, frozen 0.20787, adapted 0.07803 eV/Å}, identical to the 2026-09-19 Kaggle numbers; reload parity 0.0 / 0.0; activity (readouts only) test 0.0904 / 0.2075 with the same epoch 0 and parity 0.0 / 0.0; `TRAINABLE_BLOCKS = 0` re-run: epoch 0 identical to the default run's (0.0985 eV/atom, difference 0.0), 12-tensor adapter, reload parity 0.0 / 0.0; BYOD re-run Section 6 frozen 3.98075 / 0.20787 (the true frozen model). Not a hosted run, not a Run all through the isolated environment |
+| 2026-09-19 | `cc91bbd` / `1044b4aa` | Kaggle Tesla T4 (`kurtvalcorza/dimer-nb2-mace-materials` v3; image `torch 2.10.0+cu128` before the pinned install, `torch 2.14.0+cu130` after, Python 3.12.13, `cuda:0`) | Default sample path, `Run all` from a fresh interpreter with an empty Hugging Face cache and no repository checkout (blob SHA-1 verified against GitHub before execution) | 243.3 s | **Completed only after a manual restart; not one-pass evidence** — completed only after a manual restart — pass 1 stopped in the install cell at its restart guard (`cuda-bindings` 12.9.4 → 13.4.2, `numpy` 2.0.2 → 2.5.3), pass 2 after an executor restart ran 11/11 code cells ok; 9 files, 135 MB staged from the Hub into a clean cache (the `.model` source fetched and converted in the notebook); comparison {energy_mae_per_atom: {composition_baseline: 0.09291, frozen_model: 3.981, adapted: 0.00725}, force_mae: {zero_force_baseline: 0.7376, frozen_model: 0.2079, adapted: 0.07803}}; reload parity {max_abs_energy_diff: 1.421e-14, max_abs_force_diff: 7.772e-15}; run summary and executed notebook archived under `.agent/backups/kaggle-e2e-2026-09-19/out/dimer-nb2-mace-materials/v3/evidence/` in the workspace |
 | 2026-09-18 | `9afc026` / `1b9359b3` | Local pre-flight harness (Windows, CPython 3.12.10, CPU float64, `torch 2.14.0+cpu`, `mace-torch 0.3.16`, `e3nn 0.4.4`, `ase 3.29.0`) | Default sample path (stage → verify → **static audit + conversion in the notebook** → strict rebuild → generate + validate → split → refusal probes → predict + physics checks → baselines + frozen evaluation → calibrate + adapt → evaluate → predict new → export → reload); the two Hub files were pre-staged, so `stage_missing_files` fetched 0 of 2 entries, `verify_snapshot` verified 2, and `convert_model` produced the pinned digests (config `130b6411…`, safetensors `2ed99065…`) | 85.8 s | **PASSED** — 11/11 code cells; audit 0 violations, digest `9bb150f1…`; physics checks 0.0 / 2.8×10⁻¹⁴ / 0.0 / 0.0 / 5.2×10⁻¹⁵ / 2.0×10⁻⁸ / 1.3×10⁻¹⁵ / 0.0; test (n = 12): composition baseline 0.0929 eV/atom, zero-force 0.7376 eV/Å, frozen 3.9807 / 0.2079, adapted **0.00725 eV/atom / 0.0780 eV/Å** after 8 epochs (68.5 s, 1,919,128 params, calibration Al +3.768 / Cu +4.176 eV); new structures 0.0087 / 0.0443; adapter 16,155,811 B (39 tensors); reload parity 0.0 / 0.0. Pre-flight; hosted clean-runtime run still required |
+
+### 2026-10-06 — Colab CLI one-pass run of the review-fix head (`888fe9e` / `6df363ea`)
+
+- **Executor:** Colab CLI 0.7.4 (`colab exec -f`) on a fresh Colab VM with a Tesla T4. It runs every code cell in
+  order in one kernel and records no execution counts; the order is evidenced by `exec.log`
+  ("Executing cell 1/14" … "14/14"). This is not a browser Run all, so forms, the upload dialog and
+  `files.download()` were not exercised.
+- **Identity:** commit `888fe9e56fe1ad7388ab11beb94f2bb51f8da2a7`, notebook blob
+  `6df363eacfb1d81bab06c27bc0fc23e8d8c1e9b7` (checked against GitHub before the VM was allocated); the executed
+  notebook's 14 code-cell sources equal the committed ones.
+- **Isolated environment:** the 73-package carried lock installed `--no-deps` into CPython 3.12.12 without
+  `python-hostlist`; `mace-torch 0.3.16` imported and ran there (Sections 3–10), so the SLURM-only optional import
+  is not needed on this path.
+- **Outcome:** 1 pass, 0 restarts, 0 error outputs, 186.7 s; metrics in the table above.
+- **Not exercised:** BYOD (`USE_BYOD = True`, upload or `BYOD_PATH`), the documented experiments
+  (`TRAINABLE_BLOCKS = 0`, `ACTIVITY_TRAINABLE_BLOCKS` = 1 or 2), and a browser Run all.
+- **Evidence files** (`docs/verification/2026-10-06-colab-t4/`, byte-exact, `-text`):
+  - `mace_materials_colab_888fe9e_colab-cli-t4.ipynb` — SHA-256 `2aa7d62cadf21d06d2b289b5a7c831991934fa05be8b879e74e807567f0f1b7a`
+  - `run_summary.json` — SHA-256 `3d6262bae99b5173518c16480cc8905dcb58c7897a7bb9acde50dfbb21f54715`
+  - `exec.log` — SHA-256 `396912f98a8064dea8d55329a94cd2d39eae4b920c3843e79f45a10968a71dc1`
 
 ## Current status
 
-**Release-grade.** The `E2E` notebook blob `1044b4aa` (committed at `cc91bbd`) executed top-to-bottom in a clean Kaggle Tesla T4 runtime on 2026-09-19 (11/11 ok (1 restart after install cell), 243.3 s, 9 files, 135 MB fetched from the Hub and digest-verified inside the notebook) with no repository checkout — the REL1/REL10 supported-runtime evidence this file gates on. The local pre-flight rows above are what preceded it and remain history. Any later change to the carried modules or to the notebook produces a new blob, and the registry returns to **Candidate** until a clean run of that blob is recorded here.
+**Candidate.** The current `E2E` notebook blob `6df363ea` (review-fix head `888fe9e` of PR #9) ran one pass on a fresh Colab Tesla T4 VM on 2026-10-06 through the Colab CLI: 14/14 code cells, 1 pass, 0 restarts, 0 error outputs, the default path including the Section 10 activity, with the isolated uv environment built from the carried lock (record above). That run is a CLI sequential execution, not a browser Run all; the BYOD journey and the documented experiments were not exercised on a hosted runtime. The status stays **Candidate** until the maintainer decides on promotion. The 2026-09-19 Kaggle T4 run of the earlier blob `1044b4aa` completed only after a manual restart and remains history, as do the local pre-flight rows. Any later change to the carried modules or to the notebook produces a new blob, and the registry returns to **Candidate** until a clean run of that blob is recorded here.
