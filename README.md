@@ -76,7 +76,7 @@ Tests are offline: crafted pickles, temporary manifests and plain-Python structu
 
 ## Release status
 
-**Candidate** — the only hosted run (Kaggle Tesla T4, `cc91bbd` / `1044b4aa`, 2026-09-19) is of an earlier blob and completed only after a manual restart — pass 1 stopped in the install cell at its restart guard (`cuda-bindings` 12.9.4 → 13.4.2, `numpy` 2.0.2 → 2.5.3), pass 2 after an executor restart ran 11/11 code cells ok, so it is not one-pass Run-all evidence (RUN10/REL11). The current notebook installs its pins into an isolated uv environment and needs no restart; a one-pass hosted run of the current blob, recorded in `docs/release-verification.md`, is required before promotion. Static and unit checks — including the standalone generator parity checks — are necessary but were never the evidence; the hosted run is. A later change to the carried modules or the notebook returns the status to Candidate until re-verified.
+**Candidate** — the current blob (`888fe9e` / `6df363ea`) ran one pass on a fresh Colab Tesla T4 VM through the Colab CLI on 2026-10-06 — 14/14 code cells, 0 restarts, 0 error outputs, default path and the Section 10 activity, pins installed into the isolated uv environment — recorded in `docs/release-verification.md`. It was a CLI sequential execution, not a browser Run all, and BYOD was not exercised on a hosted runtime; promotion stays a maintainer decision. The earlier Kaggle Tesla T4 run of `1044b4aa` (2026-09-19) needed a manual restart and remains history. Static and unit checks — including the standalone generator parity checks — are necessary but were never the evidence; the hosted run is. A later change to the carried modules or the notebook returns the status to Candidate until re-verified.
 
 ## Licensing
 
