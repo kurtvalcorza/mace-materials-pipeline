@@ -341,9 +341,9 @@ def test_byod_path_runs_section_4_without_google_colab_and_names_outputs_as_byod
 
 @needs_ase
 def test_byod_errors_are_actionable_without_colab(tmp_path, monkeypatch):
-    with pytest.raises(RuntimeError, match="set BYOD_PATH to the path of one extended-XYZ file"):
+    with pytest.raises(ValueError, match=r"^\(no file\): .*set BYOD_PATH to the path of one extended-XYZ file"):
         _run_section4(tmp_path, monkeypatch, USE_BYOD="True")
-    with pytest.raises(FileNotFoundError, match="is not a file in this runtime"):
+    with pytest.raises(ValueError, match="^missing.xyz: .*is not a file in this runtime"):
         _run_section4(tmp_path, monkeypatch, USE_BYOD="True", BYOD_PATH="'missing.xyz'")
 
 
