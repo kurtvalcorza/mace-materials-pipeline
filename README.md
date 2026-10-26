@@ -76,7 +76,7 @@ Tests are offline: crafted pickles, temporary manifests and plain-Python structu
 
 ## Release status
 
-**Candidate** — the current blob (`888fe9e` / `6df363ea`) ran one pass on a fresh Colab Tesla T4 VM through the Colab CLI on 2026-10-06 — 14/14 code cells, 0 restarts, 0 error outputs, default path and the Section 10 activity, pins installed into the isolated uv environment — recorded in `docs/release-verification.md`. It was a CLI sequential execution, not a browser Run all, and BYOD was not exercised on a hosted runtime; promotion stays a maintainer decision. The earlier Kaggle Tesla T4 run of `1044b4aa` (2026-09-19) needed a manual restart and remains history. Static and unit checks — including the standalone generator parity checks — are necessary but were never the evidence; the hosted run is. A later change to the carried modules or the notebook returns the status to Candidate until re-verified.
+**Candidate** — blob `6df363ea` (`888fe9e`) ran one pass on a fresh Colab Tesla T4 VM through the Colab CLI on 2026-10-06 — 14/14 code cells, 0 restarts, 0 error outputs, default path and the Section 10 activity, pins installed into the isolated uv environment — recorded in `docs/release-verification.md`. It was a CLI sequential execution, not a browser Run all, and BYOD was not exercised on a hosted runtime; promotion stays a maintainer decision. The earlier Kaggle Tesla T4 run of `1044b4aa` (2026-09-19) needed a manual restart and remains history. Static and unit checks — including the standalone generator parity checks — are necessary but were never the evidence; the hosted run is. A later change to the carried modules or the notebook returns the status to Candidate until re-verified.
 
 ## Licensing
 
