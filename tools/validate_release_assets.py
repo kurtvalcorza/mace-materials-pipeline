@@ -63,7 +63,7 @@ CODE_MARKERS = (
     "write_dataset_xyz(records, OUTPUTS['dataset'])",
     # MMC-m2: a path on any runtime, the upload dialog only on Colab, actionable errors
     "BYOD_PATH = ''",
-    "raise RuntimeError('USE_BYOD = True needs a file: this runtime has no Colab upload dialog, so set BYOD_PATH",
+    "raise BYODRefusal('(no file)', 'USE_BYOD = True needs a file: this runtime has no Colab upload dialog, so set BYOD_PATH",
     "if len(uploaded) != 1:",
     "validate_inputs([structure])",
     # Stage 5: zero-shot prediction and the physics checks on the frozen model
