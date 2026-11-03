@@ -163,7 +163,7 @@ runtime, not general estimates.
   - `run_summary.json` — SHA-256 `3d6262bae99b5173518c16480cc8905dcb58c7897a7bb9acde50dfbb21f54715`
   - `exec.log` — SHA-256 `396912f98a8064dea8d55329a94cd2d39eae4b920c3843e79f45a10968a71dc1`
 
-### Hosted Colab T4 runs of blob `93c80230` (2026-10-29)
+### Hosted Colab T4 runs of blob `93c80230` (2026-10-29; history, REL14)
 
 These runs executed the PR head `b94559a7ba19e54e8dc9035d2950f1dead66a709`, notebook `tutorials/mace_materials_colab.ipynb` blob `93c802304ae5334a58521321595474d6bd627a80`, fetched at the 40-character SHA and Git-blob verified, with the Colab CLI (`colab exec -f`) on a fresh Colab Tesla T4 session (not a browser `Run all`). Each `run_summary.json` records `verdict` `PASS`, `exec_exit_code` 0, `input_unchanged` true and `stop_verified` true (the VM was released), and the SHA-256 of each executed notebook equals the summary's `executed_sha256`.
 
@@ -208,8 +208,52 @@ This run says nothing about the 20 cut cells, which did not run in it. Session `
 
 Not exercised by these runs: an accepted BYOD input (REL12) and a browser `Run all` of the interactive journeys (REL2).
 
+### REL14 hosted runs of blob `9db6a62a` (2026-11-03)
+
+These 2 runs executed main `c86488a09f9f52d7f69f0ff4d5eb6809c92b22d8` (`tutorials/mace_materials_colab.ipynb` blob `9db6a62a1d3fa7364f0b15a387f673fedfbf6e03`) as Colab CLI sequential executions (`colab exec -f`) on fresh Colab Tesla T4 VMs (session `suite-mace-c86488a-fc13`), not a browser `Run all`. The Colab CLI version is not recorded in `exec.log` or `run_summary.json`. The saved notebooks have no execution counts; cell order is taken from `exec.log`. Each `run_summary.json` records the commit and notebook blob above, `verdict` `PASS`, `exec_exit_code` 0, `input_unchanged` true and `stop_verified` true (the VM was released); the SHA-256 of each executed notebook equals the summary's `executed_sha256`. Local paths in the exec logs are redacted byte-wise to `<local-run-dir>`; the notebooks and summaries carried none.
+
+| Date (UTC) | Commit / notebook blob | Executor | Path exercised | Code cells | Wall time | Outcome |
+|---|---|---|---|---:|---:|---|
+| 2026-11-03 00:06 | `c86488a` / `9db6a62a` | Colab CLI sequential execution, fresh Colab Tesla T4 | default settings, no overrides | 14/14 | 182.4 s | **One pass, no restart, 0 errors**; [retained evidence](verification/2026-11-03-colab-t4/) |
+| 2026-11-03 00:10 | `c86488a` / `9db6a62a` | Colab CLI sequential execution, fresh Colab Tesla T4 | scripted DAT20 refusal: `USE_BYOD` `False` → `True` and `BYOD_PATH` `''` → `'/etc/hostname'` | 8/8 of the cut copy | 117.1 s | **Refused as designed**: one `Refused:` line, no traceback, earlier cells clean; [retained evidence](verification/2026-11-03-colab-t4-refusal/) |
+
+Lines printed by the default run (quoted from the executed notebook):
+
+```text
+{'verified_files': 2, 'revision': 'e291ace2bfae073c3ebc7ae2f9479a525989baa7'}
+{'energy_mae_per_atom': {'composition_baseline': 0.09291, 'frozen_model': 3.98075, 'adapted': 0.00725}}
+{'force_mae': {'zero_force_baseline': 0.7376, 'frozen_model': 0.20787, 'adapted': 0.07803}}
+{'reload_parity': {'max_abs_energy_diff': 1.4210854715202004e-14, 'max_abs_force_diff': 7.327471962526033e-15}, 'reloaded_best_epoch': 8}
+{'epoch0_difference_eV_per_atom': 9.71445146547012e-17, 'activity_reload_parity': {'max_abs_energy_diff': 0.0, 'max_abs_force_diff': 5.10702591327572e-15}}
+```
+
+Apart from timings, run ids, process ids and the carried source revision, the printed output equals the 2026-10-29 default run of blob `93c80230` line for line, except values at floating-point round-off: the rotation and permutation checks (`rotation_force_diff` `1.776e-14` here, `1.898e-14` then; `permutation_energy_diff` `0.000e+00` here, `1.421e-14` then; `permutation_force_diff` `4.774e-15` here, `5.329e-15` then), the reload parity `max_abs_energy_diff` (`1.4210854715202004e-14` here, `0.0` then), the activity's `epoch0_difference_eV_per_atom` and reload parity, the size of `outputs/mace_materials_result.json` (4.2 KB here, 4.1 KB then) and the adapter SHA-256 prefix at the same tensor count (39) and byte size (16,155,811).
+
+**DAT20 refusal record (2026-11-03).** Overrides, set by `--set` on a copy of the blob: `USE_BYOD` `False` → `True` and `BYOD_PATH` `''` → `'/etc/hostname'` (the run copy differs from the blob in exactly those 2 source lines). The suite cut the run copy right after the refusing cell `mace_materials-17`, dropping 20 cells (6 of them code cells), which reproduces `Run all` stopping at the first error; the cut copy is `run_copy.ipynb`, SHA-256 `97f702ccb90113b88e09f0237aa929c4ab30b6e57d888c1989f4ef0fe5303c5c` (Git blob `b9899ff1`), equal to the summary's `run_copy_sha256`. The 7 earlier code cells completed without an error. The refusing cell halted with `ename` `IsolatedCellRefusal` and printed exactly one `Refused:` line, with no traceback:
+
+```text
+Refused: hostname: ValueError: BYOD datasets must be extended XYZ (.xyz / .extxyz); fix the file, then run this cell and every cell after it again (the earlier results of this session and their outputs/ files were removed).
+```
+
+This run says nothing about the 20 cut cells, which did not run in it.
+
+| File (under `docs/verification/2026-11-03-colab-t4/`) | Captured SHA-256 | Committed SHA-256 |
+|---|---|---|
+| `mace_materials_colab_c86488a_colab-cli-t4_default.ipynb` | `1d6b01eac413754d5bcfe54d82ba3676c5034866ea674ef4c9f047bd0908ae02` | `1d6b01eac413754d5bcfe54d82ba3676c5034866ea674ef4c9f047bd0908ae02` (unchanged, no local path) |
+| `exec.log` | `005c0373593d6d8445625f421dcfebbfc13f84e945b2fcfbddca1b653cf5acc9` | `10ae4b85a62386017ef04f08ccb7b1735bcb90e67da034e1edefe96151eb411b` (2 local-path replacements) |
+| `run_summary.json` | `d0381d7c229cbc57c98309bc0d39f0b20a1af0c5512dafcf679fa24a117e00f0` | `d0381d7c229cbc57c98309bc0d39f0b20a1af0c5512dafcf679fa24a117e00f0` (unchanged, no local path) |
+
+| File (under `docs/verification/2026-11-03-colab-t4-refusal/`) | Captured SHA-256 | Committed SHA-256 |
+|---|---|---|
+| `mace_materials_colab_c86488a_colab-cli-t4_refusal.ipynb` | `27931eb03a7db53c5227e747ae4311e20ca06010c31206760e67c92c318abecd` | `27931eb03a7db53c5227e747ae4311e20ca06010c31206760e67c92c318abecd` (unchanged, no local path) |
+| `exec.log` | `4c9141b5061493ee786fc089a4a2067cb22368ed5eb5b131ac17621c0b2e604e` | `256257773ab09c6bc5cd1580a5f911406a8745f10c7937b9764ee9a328fc0a0f` (2 local-path replacements) |
+| `run_summary.json` | `2c31a1e7590ffcf4af21d45e8b1dbc241e8f4f801f60cab2fe9cd4d32c500b34` | `2c31a1e7590ffcf4af21d45e8b1dbc241e8f4f801f60cab2fe9cd4d32c500b34` (unchanged, no local path) |
+| `run_copy.ipynb` | `97f702ccb90113b88e09f0237aa929c4ab30b6e57d888c1989f4ef0fe5303c5c` | `97f702ccb90113b88e09f0237aa929c4ab30b6e57d888c1989f4ef0fe5303c5c` (unchanged, no local path) |
+
+Not exercised by these runs: an accepted BYOD input (REL12) and a browser `Run all` of the interactive journeys (REL2).
+
 ## Current status
 
-**Candidate.** The `E2E` notebook blob `6df363ea` (review-fix head `888fe9e` of PR #9) ran one pass on a fresh Colab Tesla T4 VM on 2026-10-06 through the Colab CLI: 14/14 code cells, 1 pass, 0 restarts, 0 error outputs, the default path including the Section 10 activity, with the isolated uv environment built from the carried lock (record above). That run is a CLI sequential execution, not a browser Run all; the BYOD journey and the documented experiments were not exercised on a hosted runtime. The status stays **Candidate** until the maintainer decides on promotion. The 2026-09-19 Kaggle T4 run of the earlier blob `1044b4aa` completed only after a manual restart and remains history, as do the local pre-flight rows. Any later change to the carried modules or to the notebook produces a new blob, and the registry returns to **Candidate** until a clean run of that blob is recorded here.
+The current blob `9db6a62a` (`main` at `c86488a`, the lock-upgrade revision of PRs #12 and #13) passed on a hosted Colab T4 on 2026-11-03: its default path (14/14 code cells, one pass, no restart, 0 errors) and its scripted DAT20 refusal (`USE_BYOD=True;BYOD_PATH=/etc/hostname`: exactly one `Refused:` line at cell `mace_materials-17`, no traceback, earlier cells clean, VM released); REL14 for this blob. Blob `93c80230` (code commit `4469f47`), which was the current blob on 2026-10-29 and is history now (REL14), shows a refused BYOD input as one `Refused: <file>: <reason>` line with no traceback, removes the earlier run's results and `outputs/` files and stops Run all at that cell, while genuine failures keep their traceback (NOTEBOOK_SPEC DAT19/DAT20); on 2026-10-29 its default path (14 code cells, exit 0, 0 errors) and its scripted DAT20 refusal (`USE_BYOD=True;BYOD_PATH=/etc/hostname`: exactly one `Refused:` line at cell `mace_materials-17`, no traceback, earlier cells clean, VM released) both passed on a hosted Colab Tesla T4 (Colab CLI `colab exec -f`, not a browser `Run all`). The remaining gates are REL12 (a hosted BYOD run with an accepted input) and REL2 (a browser run of the interactive journeys); earlier blobs' runs are history (REL14).
 
-The current blob `93c80230` (code commit `4469f47`) shows a refused BYOD input as one `Refused: <file>: <reason>` line with no traceback, removes the earlier run's results and `outputs/` files and stops Run all at that cell, while genuine failures keep their traceback (NOTEBOOK_SPEC DAT19/DAT20); on 2026-10-29 its default path (14 code cells, exit 0, 0 errors) and its scripted DAT20 refusal (`USE_BYOD=True;BYOD_PATH=/etc/hostname`: exactly one `Refused:` line at cell `mace_materials-17`, no traceback, earlier cells clean, VM released) both passed on a hosted Colab Tesla T4 (Colab CLI `colab exec -f`, not a browser `Run all`). The remaining gates are REL12 (a hosted BYOD run with an accepted input) and REL2 (a browser run of the interactive journeys); earlier blobs' runs are history (REL14).
+**History (2026-10-06): Candidate.** The `E2E` notebook blob `6df363ea` (review-fix head `888fe9e` of PR #9) ran one pass on a fresh Colab Tesla T4 VM on 2026-10-06 through the Colab CLI: 14/14 code cells, 1 pass, 0 restarts, 0 error outputs, the default path including the Section 10 activity, with the isolated uv environment built from the carried lock (record above). That run is a CLI sequential execution, not a browser Run all; the BYOD journey and the documented experiments were not exercised on a hosted runtime. The status stays **Candidate** until the maintainer decides on promotion. The 2026-09-19 Kaggle T4 run of the earlier blob `1044b4aa` completed only after a manual restart and remains history, as do the local pre-flight rows. Any later change to the carried modules or to the notebook produces a new blob, and the registry returns to **Candidate** until a clean run of that blob is recorded here.
