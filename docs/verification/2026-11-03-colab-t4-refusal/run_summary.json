@@ -1,0 +1,72 @@
+{
+  "repo": "mace-materials-pipeline",
+  "sha": "c86488a09f9f52d7f69f0ff4d5eb6809c92b22d8",
+  "notebook": "tutorials/mace_materials_colab.ipynb",
+  "blob": "9db6a62a1d3fa7364f0b15a387f673fedfbf6e03",
+  "gpu": "T4",
+  "session": "suite-mace-c86488a-fc13",
+  "started_utc": "2026-11-03T00:10:27+00:00",
+  "runner": "Colab CLI `colab exec -f` on a fresh session (not a browser Run all)",
+  "overrides": [
+    {
+      "name": "USE_BYOD",
+      "from": "False",
+      "to": "True"
+    },
+    {
+      "name": "BYOD_PATH",
+      "from": "''",
+      "to": "'/etc/hostname'"
+    }
+  ],
+  "run_copy_blob": "b9899ff15fa0ef6a5aecbd50926d9ef8d1930dfd",
+  "run_copy_sha256": "97f702ccb90113b88e09f0237aa929c4ab30b6e57d888c1989f4ef0fe5303c5c",
+  "run_copy_note": "refusal run: the run copy is the committed notebook with the listed assignment overrides, cut immediately after the refusal cell and re-serialised (nbformat layout); input_unchanged compares against that copy",
+  "truncated_after_cell": "mace_materials-17",
+  "refusal_cell_ref": "mace_materials-17",
+  "refusal_cell_index": 8,
+  "cells_dropped": 20,
+  "code_cells_dropped": 6,
+  "original_sha256": "42e17aff1942e92cb0d023f31b05578c32ee9bdc5955c4f95a87cca2b1934c1a",
+  "status": "[suite-mace-c86488a-fc13] gpu-t4-s-usw4a1-36adjvufv5pqs | Hardware: T4 | Shape: Standard | Variant: GPU | Status: IDLE",
+  "exec_exit_code": 0,
+  "stopped": true,
+  "stop_verified": true,
+  "wall_s": 117.1,
+  "input_unchanged": true,
+  "executed_file": "mace_materials_colab_c86488a_colab-cli-t4_output.ipynb",
+  "log_cells": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8
+  ],
+  "log_total": 8,
+  "code_cells": 8,
+  "executed_cells": 5,
+  "errors": [
+    {
+      "cell": "mace_materials-17",
+      "ename": "IsolatedCellRefusal",
+      "evalue": "hostname: ValueError: BYOD datasets must be extended XYZ (.xyz / .extxyz); fix the file, then run this cell and every cell after it again (the earlier results of this session and their outputs/ files were removed)."
+    }
+  ],
+  "execution_counts": [],
+  "sequential": null,
+  "executed_sha256": "27931eb03a7db53c5227e747ae4311e20ca06010c31206760e67c92c318abecd",
+  "log_sequential_complete": true,
+  "mode": "expect_refusal",
+  "refusal_line": "Refused: hostname: ValueError: BYOD datasets must be extended XYZ (.xyz / .extxyz); fix the file, then run this cell and every cell after it again (the earlier results of this session and their outputs/ files were removed).",
+  "halting_cell_index": 8,
+  "halting_cell_id": "mace_materials-17",
+  "error_cells": [
+    8
+  ],
+  "refusal_fail_reasons": [],
+  "refusal_ok": true,
+  "verdict": "PASS"
+}
